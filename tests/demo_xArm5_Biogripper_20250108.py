@@ -1,12 +1,11 @@
-#    This code demonstrate the workflow of picking up an HPLC tray from a location
-#    and moving it to one of the positions on the Jubilee platform
-
+# This code must be run from the PC that xArm is tethered to
 # Author: Yang Cao <yangcyril.cao@utoronto.ca>
 
 # Based on xArm-Python-SDK: https://github.com/xArm-Developer/xArm-Python-SDK
 #   1. git clone git@github.com:xArm-Developer/xArm-Python-SDK.git
 #   2. cd xArm-Python-SDK
 #   3. python setup.py install
+#   4. go back to the parent folder, git clone this package and install
 
 import sys
 import math
@@ -103,7 +102,7 @@ class RobotMain(object):
 
     # Robot Main Run
     def run(self):
-        try:
+        try:'''
             # Joint Motion
             for i in range(int(1)):
                 if not self.is_alive:
@@ -184,7 +183,7 @@ class RobotMain(object):
                 if interval < 0.01:
                     time.sleep(0.01 - interval)
         except Exception as e:
-            self.pprint('MainException: {}'.format(e))
+            self.pprint('MainException: {}'.format(e))'''
         finally:
             self.alive = False
             self._arm.release_error_warn_changed_callback(self._error_warn_changed_callback)
