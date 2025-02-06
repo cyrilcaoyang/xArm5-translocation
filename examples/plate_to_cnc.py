@@ -1,15 +1,15 @@
 import time
+from setuptools.config.pyprojecttoml import load_file
 from xarm import version
 from xarm.wrapper import XArmAPI
-
-from src.xArm5 import load_arm_config, RobotMain
+from src.xArm5 import load_arm_config, xArm
 
 
 # Robot Main Run
 def run(robot):
     try:
         # Joint Motion
-        for i in range(int(3)):
+        for i in range(int(1)):
             if not robot.is_alive:
                 break
             t1 = time.monotonic()
@@ -42,6 +42,7 @@ def run(robot):
             code = robot.arm.set_servo_angle(angle=[30.7, 48.4, -103.3, 54.8, -59.2], speed=robot._angle_speed, mvacc=robot._angle_acc, wait=True, radius=-1.0)
             if not robot.check_code(code, 'set_servo_angle'):
                 return
+            time.sleep(5)
             code = robot.arm.set_servo_angle(angle=[30.7, 51.8, -103.3, 51.4, -59.3], speed=robot._angle_speed, mvacc=robot._angle_acc, wait=True, radius=-1.0)
             if not robot.check_code(code, 'set_servo_angle'):
                 return
@@ -69,7 +70,11 @@ def run(robot):
 
 
 if __name__ == '__main__':
-    RobotMain.pprint('xArm-Python-SDK Version:{}'.format(version.__version__))
-    arm = XArmAPI('192.168.1.212', baud_checkset=False)
-    xArm5 = RobotMain(arm)
+    # Load settings from the config file
+    settings = load_arm_config()
+    host = settings['host']
+
+    # Instantiating the robot
+    arm = XArmAPI(host, baud_checkset=False)
+    xArm5 = xArm(arm)
     run(xArm5)

@@ -14,7 +14,7 @@ def load_arm_config():
     try:
         with open(Config_Path, 'r') as file:
             settings = yaml.safe_load(file)
-            print("Setting file loaded.")
+            print("Setting file successfully loaded.")
             return settings
     except FileNotFoundError:
         print("Error: YAML file not found.")
@@ -22,14 +22,12 @@ def load_arm_config():
         print(f"Error parsing YAML: {e}")
 
 
-class RobotMain(object):
-    """Robot Main Class"""
+class xArm(object):
+    """xArm Class"""
     def __init__(self, robot, **kwargs):
         self.alive = True
         self._arm = robot
         self._ignore_exit_state = False
-        self._vars = {}
-        self._funcs = {}
         self.robot_init()
 
         settings = load_arm_config()
@@ -49,7 +47,7 @@ class RobotMain(object):
         self._arm.set_state(0)
         time.sleep(1)
         self._arm.register_error_warn_changed_callback(self.error_warn_changed_callback)
-        self._arm.register_state_changed_callback(self._state_changed_callback)
+        self._arm.register_state_changed_callback(self.state_changed_callback)
 
     # Register error/warn changed callback
     def error_warn_changed_callback(self, data):
@@ -77,21 +75,16 @@ class RobotMain(object):
     def pprint(*args, **kwargs):
         try:
             stack_tuple = traceback.extract_stack(limit=2)[0]
-            print('[{}][{}] {}'.format(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())), stack_tuple[1], ' '.join(map(str, args))))
+            print('[{}][{}] {}'.format(time.strftime(
+                '%Y-%m-%d %H:%M:%S', time.localtime(time.time())),
+                stack_tuple[1], ' '.join(map(str, args)))
+            )
         except:
             print(*args, **kwargs)
 
     @property
     def arm(self):
         return self._arm
-
-    @property
-    def VARS(self):
-        return self._vars
-
-    @property
-    def FUNCS(self):
-        return self._funcs
 
     @property
     def is_alive(self):
