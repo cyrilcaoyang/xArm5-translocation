@@ -5,7 +5,6 @@ from xarm.wrapper import XArmAPI
 from src.xArm5 import load_arm_config, xArm
 
 
-# Robot Main Run
 def run(robot):
     try:
         # Joint Motion
