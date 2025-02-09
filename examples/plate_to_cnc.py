@@ -1,6 +1,4 @@
 import time
-from setuptools.config.pyprojecttoml import load_file
-from xarm import version
 from xarm.wrapper import XArmAPI
 from src.xArm5 import load_arm_config, xArm
 
@@ -32,6 +30,7 @@ def run(robot):
             if not robot.is_alive:
                 break
             t1 = time.monotonic()
+
             code = robot.arm.set_bio_gripper_enable(True)
             if not robot.check_code(code, 'set_bio_gripper_enable'):
                 return
@@ -43,6 +42,7 @@ def run(robot):
                 return
             robot._angle_speed = 50
             robot._angle_acc = 100
+
             set_join(HOME, robot)
             set_join(CNC, robot)
             code = robot.arm.open_bio_gripper(speed=300, wait=True)
@@ -63,9 +63,11 @@ def run(robot):
             if not robot.check_code(code, 'close_bio_gripper'):
                 return
             set_join(HOME, robot)
+
             interval = time.monotonic() - t1
             if interval < 0.01:
                 time.sleep(0.01 - interval)
+
     except Exception as e:
         robot.pprint('MainException: {}'.format(e))
     finally:
