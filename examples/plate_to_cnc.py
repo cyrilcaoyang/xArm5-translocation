@@ -6,9 +6,12 @@ from src.PyxArm import load_arm5_config, load_fixed_pos
 # Pre-defined joint angles
 positions = load_fixed_pos()
 robot_home = positions["ROBOT_HOME"]
-cnc_home = positions["CNC_HOME"]
 cnc_plate_low = positions["CNC_PLATE_LOW"]
 cnc_plate_high = positions["CNC_PLATE_HIGH"]
+table_plate_low = positions["TABLE_PLATE_LOW"]
+table_plate_high = positions["TABLE_PLATE_HIGH"]
+table_1dram_a1_low = positions["TABLE_1DRAM_A1_LOW"]
+table_1dram_a1_high = positions["TABLE_1DRAM_A1_HIGH"]
 
 
 def run_loop(robot, cycles):
@@ -20,7 +23,7 @@ def run_loop(robot, cycles):
             t1 = time.monotonic()
 
             robot._angle_speed = 50
-            robot._angle_acc = 100
+            robot._angle_acc = 50
 
             # Initiate robot and gripper, gripper is closed
             gripper = BioGripper(robot)
@@ -28,24 +31,21 @@ def run_loop(robot, cycles):
             gripper.open()
             gripper.close()
 
-            # Move gripper to pick up the plate
+            # Move gripper to pick up the plate from CNC
             robot.move_joint(robot_home)
-            robot.move_joint(cnc_home)
             robot.move_joint(cnc_plate_high)
             gripper.open()
             robot.move_joint(cnc_plate_low)
             gripper.close()
             robot.move_joint(cnc_plate_high)
-            time.sleep(3)
 
-            # Put back the plate and return home
-            robot.move_joint(cnc_plate_low)
+            # Put plate on the table and return home
+            xArm5.move_joint(table_plate_high)
+            xArm5.move_joint(table_plate_low)
             gripper.open()
-            robot.move_joint(cnc_plate_high)
+            xArm5.move_joint(table_plate_high)
             gripper.close()
-
-            robot.move_joint(cnc_home)
-            robot.move_joint(robot_home)
+            xArm5.move_joint(robot_home)
 
             interval = time.monotonic() - t1
             if interval < 0.01:
@@ -71,12 +71,22 @@ if __name__ == '__main__':
     # xArm5._angle_speed = 50
     # xArm5._angle_acc = 100
     # gripper = BioGripper(xArm5)
-
-    # xArm5.move_joint(cnc_home)
-    # xArm5.move_joint(robot_home)
     # gripper.enable()
-    # gripper.open(speed=100)
-    # gripper.close(speed=200)
+    # gripper.open()
+    # xArm5.move_joint(robot_home)
+    # gripper.close()
+    #
+    # xArm5.move_joint(table_plate_high)
+    # xArm5.move_joint(table_1dram_a1_high)
+    # gripper.open()
+    # xArm5.move_joint(table_1dram_a1_low)
+    # gripper.close()
+    # xArm5.move_joint(table_1dram_a1_high)
+    # xArm5.move_joint(table_1dram_a1_low)
+    # gripper.open()
+    # xArm5.move_joint(table_1dram_a1_high)
+    # gripper.close()
+    # xArm5.move_joint(robot_home)
 
     # Or run cycles of a workflow
-    run_loop(xArm5, cycles=2)
+    run_loop(xArm5, cycles=1)
