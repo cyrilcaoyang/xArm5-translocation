@@ -1,10 +1,12 @@
 """
 Python code to control the xArm5:
 Functions:
-    load_arm5_config()
-    move_joint(angles, robot)
-Class:
-    xArm(arm)
+    load_arm5_config():
+    move_joint(angles, robot):
+
+Classes:
+    xArm:
+    BioGripper:
 """
 
 import time
@@ -12,16 +14,15 @@ import traceback
 import yaml
 from pathlib import Path
 
-Config_Path_xArm5 = (
-    Path(__file__).resolve().parent.parent
-    / 'settings' / 'xarm5_config.yaml'
-)
+Arm_Config_Path = (Path(__file__).resolve().parent.parent / 'settings' / 'xarm5_config.yaml')
+Gripper_Config_Path = (Path(__file__).resolve().parent.parent / 'settings' / 'bio_gripper_config.yaml')
+Location_Config_Path = (Path(__file__).resolve().parent.parent / 'settings' / 'location_config.yaml')
 
 
 def load_arm5_config():
     # Loading the robotic config file
     try:
-        with open(Config_Path_xArm5, 'r') as file:
+        with open(Arm_Config_Path, 'r') as file:
             settings = yaml.safe_load(file)
             print("Setting file successfully loaded.")
             return settings
@@ -31,18 +32,30 @@ def load_arm5_config():
         print(f"Error parsing YAML: {e}")
 
 
-# Move joins to angles, with code checking
-def move_joint(angles, robot):
-    code = robot.arm.set_servo_angle(
-        angle=angles,
-        speed=robot._angle_speed,
-        mvacc=robot._angle_acc,
-        wait=True, radius=-1.0
-    )
-    if not robot.check_code(code, 'set_servo_angle'):
-        return
-    else:
-        print(f"Joints moved to {angles}.")
+def load_gripper_config():
+    # Loading the robotic config file
+    try:
+        with open(Gripper_Config_Path, 'r') as file:
+            settings = yaml.safe_load(file)
+            print("Setting file successfully loaded.")
+            return settings
+    except FileNotFoundError:
+        print("Error: YAML file not found.")
+    except yaml.YAMLError as e:
+        print(f"Error parsing YAML: {e}")
+
+
+def load_fixed_pos():
+    # Loading the hard-coded positions from a config file
+    try:
+        with open(Location_Config_Path, 'r') as file:
+            settings = yaml.safe_load(file)
+            print("Setting file successfully loaded.")
+            return settings
+    except FileNotFoundError:
+        print("Error: YAML file not found.")
+    except yaml.YAMLError as e:
+        print(f"Error parsing YAML: {e}")
 
 
 class xArm(object):
@@ -122,6 +135,49 @@ class xArm(object):
             return self._arm.state < 4
         else:
             return False
+
+    def move_joint(self, angles):
+        # Move joints with error checking
+        code = self.arm.set_servo_angle(
+            angle=angles,
+            speed=self._angle_speed,
+            mvacc=self._angle_acc,
+            wait=True, radius=-1.0
+        )
+        if not self.check_code(code, 'set_servo_angle'):
+            return
+        else:
+            print(f"Joints moved to {angles}.")
+
+
+class BioGripper(object):
+    """
+    A class to handle the actions of bio gripper with code checking
+    """
+    def __init__(self, robot):
+        self.robot = robot
+        try:
+            self.gripper_speed = load_gripper_config()["GRIPPER_SPEED"]
+        except (KeyError, FileNotFoundError) as e:
+            print(f"Error loading gripper config: {str(e)}")
+            self.gripper_speed = 300  # Default fallback value
+
+    def enable(self):
+        # Enable the bio gripper with error checking
+        code = self.robot.arm.set_bio_gripper_enable(True)
+        return self.robot.check_code(code, 'set_bio_gripper_enable')
+
+    def open(self, speed=None, wait=True):
+        # Open the bio gripper with error checking
+        speed = self.gripper_speed
+        code = self.robot.arm.open_bio_gripper(speed=speed, wait=wait)
+        return self.robot.check_code(code, 'open_bio_gripper')
+
+    def close(self, speed=None, wait=True):
+        # Close the bio gripper with error checking
+        speed = self.gripper_speed
+        code = self.robot.arm.close_bio_gripper(speed=speed, wait=wait)
+        return self.robot.check_code(code, 'close_bio_gripper')
 
 
 if __name__ == "__main__":

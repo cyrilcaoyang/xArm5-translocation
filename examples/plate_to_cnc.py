@@ -1,54 +1,51 @@
 import time
 from xarm.wrapper import XArmAPI
-from src.PyxArm import load_arm5_config, xArm, move_joint
+from src.PyxArm import xArm, BioGripper
+from src.PyxArm import load_arm5_config, load_fixed_pos
 
 # Pre-defined joint angles
-HOME = [0.0, -60.0, 0.0, 60.0, 0.0]
-CNC = [30.7, 48.4, -103.3, 54.8, -59.2]
-CNC_plate_low = [30.7, 51.8, -103.3, 51.4, -59.3]
-CNC_plate_high = [30.7, 48.4, -103.3, 54.8, -59.2]
+positions = load_fixed_pos()
+robot_home = positions["ROBOT_HOME"]
+cnc_home = positions["CNC_HOME"]
+cnc_plate_low = positions["CNC_PLATE_LOW"]
+cnc_plate_high = positions["CNC_PLATE_HIGH"]
 
 
-def run(robot):
+def run_loop(robot, cycles):
     try:
         # Joint Motion
-        for i in range(int(1)):
+        for i in range(int(cycles)):
             if not robot.is_alive:
                 break
             t1 = time.monotonic()
 
-            code = robot.arm.set_bio_gripper_enable(True)
-            if not robot.check_code(code, 'set_bio_gripper_enable'):
-                return
-            code = robot.arm.open_bio_gripper(speed=300, wait=True)
-            if not robot.check_code(code, 'open_bio_gripper'):
-                return
-            code = robot.arm.close_bio_gripper(speed=300, wait=True)
-            if not robot.check_code(code, 'close_bio_gripper'):
-                return
             robot._angle_speed = 50
             robot._angle_acc = 100
 
-            move_joint(HOME, robot)
-            move_joint(CNC, robot)
-            code = robot.arm.open_bio_gripper(speed=300, wait=True)
-            if not robot.check_code(code, 'open_bio_gripper'):
-                return
-            move_joint(CNC_plate_low, robot)
-            code = robot.arm.close_bio_gripper(speed=300, wait=True)
-            if not robot.check_code(code, 'close_bio_gripper'):
-                return
-            move_joint(CNC_plate_high, robot)
+            # Initiate robot and gripper, gripper is closed
+            gripper = BioGripper(robot)
+            gripper.enable()
+            gripper.open()
+            gripper.close()
+
+            # Move gripper to pick up the plate
+            robot.move_joint(robot_home)
+            robot.move_joint(cnc_home)
+            robot.move_joint(cnc_plate_high)
+            gripper.open()
+            robot.move_joint(cnc_plate_low)
+            gripper.close()
+            robot.move_joint(cnc_plate_high)
             time.sleep(3)
-            move_joint(CNC_plate_low, robot)
-            code = robot.arm.open_bio_gripper(speed=300, wait=True)
-            if not robot.check_code(code, 'open_bio_gripper'):
-                return
-            move_joint(CNC, robot)
-            code = robot.arm.close_bio_gripper(speed=300, wait=True)
-            if not robot.check_code(code, 'close_bio_gripper'):
-                return
-            move_joint(HOME, robot)
+
+            # Put back the plate and return home
+            robot.move_joint(cnc_plate_low)
+            gripper.open()
+            robot.move_joint(cnc_plate_high)
+            gripper.close()
+
+            robot.move_joint(cnc_home)
+            robot.move_joint(robot_home)
 
             interval = time.monotonic() - t1
             if interval < 0.01:
@@ -70,4 +67,16 @@ if __name__ == '__main__':
     arm = XArmAPI(host, baud_checkset=False)
     xArm5 = xArm(arm)
 
-    run(xArm5)
+    # # Run a workflow:
+    # xArm5._angle_speed = 50
+    # xArm5._angle_acc = 100
+    # gripper = BioGripper(xArm5)
+
+    # xArm5.move_joint(cnc_home)
+    # xArm5.move_joint(robot_home)
+    # gripper.enable()
+    # gripper.open(speed=100)
+    # gripper.close(speed=200)
+
+    # Or run cycles of a workflow
+    run_loop(xArm5, cycles=2)
