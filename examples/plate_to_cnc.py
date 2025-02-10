@@ -1,26 +1,12 @@
 import time
 from xarm.wrapper import XArmAPI
-from src.xArm5 import load_arm_config, xArm
+from src.PyxArm import load_arm5_config, xArm, move_joint
 
 # Pre-defined joint angles
 HOME = [0.0, -60.0, 0.0, 60.0, 0.0]
 CNC = [30.7, 48.4, -103.3, 54.8, -59.2]
 CNC_plate_low = [30.7, 51.8, -103.3, 51.4, -59.3]
 CNC_plate_high = [30.7, 48.4, -103.3, 54.8, -59.2]
-
-
-# Move joins to angles
-def set_join(angles, robot):
-    code = robot.arm.set_servo_angle(
-        angle=angles,
-        speed=robot._angle_speed,
-        mvacc=robot._angle_acc,
-        wait=True, radius=-1.0
-    )
-    if not robot.check_code(code, 'set_servo_angle'):
-        return
-    else:
-        print(f"Joints moved to {angles}.")
 
 
 def run(robot):
@@ -43,26 +29,26 @@ def run(robot):
             robot._angle_speed = 50
             robot._angle_acc = 100
 
-            set_join(HOME, robot)
-            set_join(CNC, robot)
+            move_joint(HOME, robot)
+            move_joint(CNC, robot)
             code = robot.arm.open_bio_gripper(speed=300, wait=True)
             if not robot.check_code(code, 'open_bio_gripper'):
                 return
-            set_join(CNC_plate_low, robot)
+            move_joint(CNC_plate_low, robot)
             code = robot.arm.close_bio_gripper(speed=300, wait=True)
             if not robot.check_code(code, 'close_bio_gripper'):
                 return
-            set_join(CNC_plate_high, robot)
+            move_joint(CNC_plate_high, robot)
             time.sleep(3)
-            set_join(CNC_plate_low, robot)
+            move_joint(CNC_plate_low, robot)
             code = robot.arm.open_bio_gripper(speed=300, wait=True)
             if not robot.check_code(code, 'open_bio_gripper'):
                 return
-            set_join(CNC, robot)
+            move_joint(CNC, robot)
             code = robot.arm.close_bio_gripper(speed=300, wait=True)
             if not robot.check_code(code, 'close_bio_gripper'):
                 return
-            set_join(HOME, robot)
+            move_joint(HOME, robot)
 
             interval = time.monotonic() - t1
             if interval < 0.01:
@@ -77,11 +63,11 @@ def run(robot):
 
 
 if __name__ == '__main__':
-    # Load settings from the config file
-    settings = load_arm_config()
-    host = settings['host']
+    setting = load_arm5_config()
+    host = setting['host']
 
     # Instantiating the robot
     arm = XArmAPI(host, baud_checkset=False)
     xArm5 = xArm(arm)
+
     run(xArm5)

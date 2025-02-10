@@ -1,18 +1,27 @@
+"""
+Python code to control the xArm5:
+Functions:
+    load_arm5_config()
+    move_joint(angles, robot)
+Class:
+    xArm(arm)
+"""
+
 import time
 import traceback
 import yaml
 from pathlib import Path
 
-Config_Path = (
+Config_Path_xArm5 = (
     Path(__file__).resolve().parent.parent
     / 'settings' / 'xarm5_config.yaml'
 )
 
 
-def load_arm_config():
+def load_arm5_config():
     # Loading the robotic config file
     try:
-        with open(Config_Path, 'r') as file:
+        with open(Config_Path_xArm5, 'r') as file:
             settings = yaml.safe_load(file)
             print("Setting file successfully loaded.")
             return settings
@@ -20,6 +29,20 @@ def load_arm_config():
         print("Error: YAML file not found.")
     except yaml.YAMLError as e:
         print(f"Error parsing YAML: {e}")
+
+
+# Move joins to angles, with code checking
+def move_joint(angles, robot):
+    code = robot.arm.set_servo_angle(
+        angle=angles,
+        speed=robot._angle_speed,
+        mvacc=robot._angle_acc,
+        wait=True, radius=-1.0
+    )
+    if not robot.check_code(code, 'set_servo_angle'):
+        return
+    else:
+        print(f"Joints moved to {angles}.")
 
 
 class xArm(object):
@@ -30,7 +53,7 @@ class xArm(object):
         self._ignore_exit_state = False
         self.robot_init()
 
-        settings = load_arm_config()
+        settings = load_arm5_config()
         self._host = settings['host']
         self._port = settings['port']
         self._tcp_speed = settings['Tcp_Speed']
@@ -102,4 +125,5 @@ class xArm(object):
 
 
 if __name__ == "__main__":
-    setting = load_arm_config()
+    setting = load_arm5_config()
+    host = setting['host']

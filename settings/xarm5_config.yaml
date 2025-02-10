@@ -2,7 +2,7 @@
 # Please use an ethernet cable and connect the robot to intranet via LAN
 # According to the documentation, the IP should be in the following range:
 ---
-host: '192.168.1.212'
+host: '192.168.254.97'
 port: 18333
 Tcp_Speed: 100,
 Tcp_Acc: 2000,
