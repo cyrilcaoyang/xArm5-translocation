@@ -29,9 +29,9 @@ def run_loop(robot, cycles):
             gripper = BioGripper(robot)
             gripper.enable()
             gripper.open()
-            gripper.close()
 
             # Move gripper to pick up the plate from CNC
+            gripper.close()
             robot.move_joint(robot_home)
             robot.move_joint(cnc_plate_high)
             gripper.open()
