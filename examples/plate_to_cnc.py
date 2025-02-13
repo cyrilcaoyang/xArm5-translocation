@@ -67,16 +67,44 @@ if __name__ == '__main__':
     arm = XArmAPI(host, baud_checkset=False)
     xArm5 = xArm(arm)
 
-    # # Run a workflow:
-    # xArm5._angle_speed = 50
-    # xArm5._angle_acc = 100
-    # gripper = BioGripper(xArm5)
-    # gripper.enable()
-    # gripper.open()
-    # xArm5.move_joint(robot_home)
-    # gripper.close()
-    #
-    # xArm5.move_joint(table_plate_high)
+    # Arm and gripper init and go home:
+    xArm5._angle_speed = 25
+    xArm5._angle_acc = 50
+    gripper = BioGripper(xArm5)
+    gripper.enable()
+    gripper.open()
+    xArm5.move_joint(robot_home)
+    gripper.close()
+
+    # Arm pick up plate from cnc
+    xArm5.move_joint(cnc_plate_high)
+    gripper.open()
+    xArm5.move_joint(cnc_plate_low)
+    gripper.close()
+    xArm5.move_joint(cnc_plate_high)
+
+    # Arm place plate to table
+    xArm5.move_joint(table_plate_high)
+    xArm5.move_joint(table_plate_low)
+    gripper.open()
+    xArm5.move_joint(table_plate_high)
+
+    # Arm pick up plate from table
+    xArm5.move_joint(table_plate_high)
+    gripper.open()
+    xArm5.move_joint(table_plate_low)
+    gripper.close()
+    xArm5.move_joint(table_plate_high)
+
+    # Arm place plate on cnc
+    xArm5.move_joint(cnc_plate_high)
+    xArm5.move_joint(cnc_plate_low)
+    gripper.open()
+    xArm5.move_joint(cnc_plate_high)
+
+
+
+    # xArm5.move_joint(table_1dram_high)
     # xArm5.move_joint(table_1dram_a1_high)
     # gripper.open()
     # xArm5.move_joint(table_1dram_a1_low)
@@ -89,4 +117,4 @@ if __name__ == '__main__':
     # xArm5.move_joint(robot_home)
 
     # Or run cycles of a workflow
-    run_loop(xArm5, cycles=1)
+    # run_loop(xArm5, cycles=1)
