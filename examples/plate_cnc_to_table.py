@@ -8,14 +8,13 @@ positions = load_fixed_pos()
 robot_home = positions["ROBOT_HOME"]
 robot_home_high = positions["ROBOT_HOME_HIGH"]
 robot_back_high = positions["ROBOT_BACK_HIGH"]
-handshake_back_high = positions["HANDSHAKE_BACK_HIGH"]
-handshake_back_low = positions["HANDSHAKE_BACK_LOW"]
+cnc_home = positions["CNC_HOME"]
 cnc_plate_r_low = positions["CNC_PLATE_R_LOW"]
+cnc_plate_r_low_up = positions["CNC_PLATE_R_LOW_UP"]
 cnc_plate_r_high = positions["CNC_PLATE_R_HIGH"]
-table_plate_r_low = positions["TABLE_PLATE_R_LOW"]
-table_plate_r_high = positions["TABLE_PLATE_R_HIGH"]
-table_plate_r_1dram_a1_low = positions["TABLE_PLATE_R_1DRAM_A1_LOW"]
-table_plate_r_1dram_a1_high = positions["TABLE_PLATE_R_1DRAM_A1_HIGH"]
+table_plate_l_low = positions["TABLE_PLATE_L_LOW"]
+table_plate_l_low_up = positions["TABLE_PLATE_L_LOW_UP"]
+table_plate_l_high = positions["TABLE_PLATE_L_HIGH"]
 
 
 def run_loop(robot, cycles):
@@ -26,33 +25,40 @@ def run_loop(robot, cycles):
                 break
             t1 = time.monotonic()
 
-            robot._angle_speed = 50
+            robot._angle_speed = 150
             robot._angle_acc = 50
 
+            xArm5.move_joint(cnc_home)
             # Arm pick up plate from cnc
             xArm5.move_joint(cnc_plate_r_high)
             gripper.open()
             xArm5.move_joint(cnc_plate_r_low)
             gripper.close()
+            xArm5.move_joint(cnc_plate_r_low_up)
             xArm5.move_joint(cnc_plate_r_high)
 
             # Arm place plate to table
-            xArm5.move_joint(table_plate_r_high)
-            xArm5.move_joint(table_plate_r_low)
+            xArm5.move_joint(table_plate_l_high)
+            xArm5.move_joint(table_plate_l_low_up)
+            xArm5.move_joint(table_plate_l_low)
             gripper.open()
-            xArm5.move_joint(table_plate_r_high)
+            xArm5.move_joint(table_plate_l_high)
 
             # Arm pick up plate from table
-            xArm5.move_joint(table_plate_r_high)
+            xArm5.move_joint(table_plate_l_high)
             gripper.open()
-            xArm5.move_joint(table_plate_r_low)
+            xArm5.move_joint(table_plate_l_low_up)
+            xArm5.move_joint(table_plate_l_low)
             gripper.close()
-            xArm5.move_joint(table_plate_r_high)
+            xArm5.move_joint(table_plate_l_low_up)
+            xArm5.move_joint(table_plate_l_high)
 
             # Arm place plate on cnc
             xArm5.move_joint(cnc_plate_r_high)
+            xArm5.move_joint(cnc_plate_r_low_up)
             xArm5.move_joint(cnc_plate_r_low)
             gripper.open()
+            xArm5.move_joint(cnc_plate_r_low_up)
             xArm5.move_joint(cnc_plate_r_high)
 
             interval = time.monotonic() - t1
@@ -89,7 +95,7 @@ if __name__ == '__main__':
     gripper.close()
 
     # Option 1. Run cycles of a workflow
-    run_loop(xArm5, cycles=1000)
+    run_loop(xArm5, cycles=100)
 
     # Option 2. Runing step by step
     # xArm5.move_joint(table_1dram_high)

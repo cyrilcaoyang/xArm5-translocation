@@ -10,6 +10,7 @@ robot_home_high = positions["ROBOT_HOME_HIGH"]
 robot_back_high = positions["ROBOT_BACK_HIGH"]
 handshake_back_high = positions["HANDSHAKE_BACK_HIGH"]
 handshake_back_low = positions["HANDSHAKE_BACK_LOW"]
+cnc_home = positions["CNC_HOME"]
 cnc_plate_r_low = positions["CNC_PLATE_R_LOW"]
 cnc_plate_r_high = positions["CNC_PLATE_R_HIGH"]
 table_plate_r_low = positions["TABLE_PLATE_R_LOW"]
@@ -28,6 +29,9 @@ def run_loop(robot, cycles):
 
             robot._angle_speed = 50
             robot._angle_acc = 50
+
+            xArm5.move_joint(robot_home)
+            xArm5.move_joint(cnc_home)
 
             # Arm pick up plate from cnc
             xArm5.move_joint(cnc_plate_r_high)
