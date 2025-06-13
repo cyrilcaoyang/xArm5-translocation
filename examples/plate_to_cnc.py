@@ -101,8 +101,7 @@ if __name__ == '__main__':
     xArm5.move_joint(cnc_plate_low)
     gripper.open()
     xArm5.move_joint(cnc_plate_high)
-
-
+    xArm5.move_joint(robot_home)
 
     # xArm5.move_joint(table_1dram_high)
     # xArm5.move_joint(table_1dram_a1_high)

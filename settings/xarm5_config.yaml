@@ -4,7 +4,7 @@
 ---
 host: '192.168.254.97'
 port: 18333
-Tcp_Speed: 100,
-Tcp_Acc: 2000,
-Angle_Speed: 20,
+Tcp_Speed: 100
+Tcp_Acc: 2000
+Angle_Speed: 20
 Angle_Acc: 500

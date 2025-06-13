@@ -1,5 +1,6 @@
-# xArm5
-Python code to drive the movement of xArm5 to manipulate objects
+# PyxArm
+Python code to drive the movement of xArm and linear rail from UFactory to manipulate objects.
+
 
 ## Please install SDK first in your environment
 xArm-Python-SDK: https://github.com/xArm-Developer/xArm-Python-SDK

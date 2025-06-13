@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="SDL2-PC-Conda" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="SDL2-PC-Conda" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="SDL2_robot_conda" project-jdk-type="Python SDK" />
 </project>
