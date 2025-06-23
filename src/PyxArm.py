@@ -1,12 +1,13 @@
 """
 Python code to control the xArm5:
 Functions:
-    load_arm5_config():
+    load_arm_config():
     move_joint(angles, robot):
 
 Classes:
     xArm:
     BioGripper:
+    LinearTrack:
 """
 
 import time
@@ -14,15 +15,29 @@ import traceback
 import yaml
 from pathlib import Path
 
-Arm_Config_Path = (Path(__file__).resolve().parent.parent / 'settings' / 'xarm5_config.yaml')
+Arm_Config_Path = (Path(__file__).resolve().parent.parent / 'settings' / 'xarm_config.yaml')
 Gripper_Config_Path = (Path(__file__).resolve().parent.parent / 'settings' / 'bio_gripper_config.yaml')
 Location_Config_Path = (Path(__file__).resolve().parent.parent / 'settings' / 'location_config.yaml')
+Linear_Track_Config_Path = (Path(__file__).resolve().parent.parent / 'settings' / 'linear_track_config.yaml')
 
 
-def load_arm5_config():
+def load_arm_config():
     # Loading the robotic config file
     try:
         with open(Arm_Config_Path, 'r') as file:
+            settings = yaml.safe_load(file)
+            print("Setting file successfully loaded.")
+            return settings
+    except FileNotFoundError:
+        print("Error: YAML file not found.")
+    except yaml.YAMLError as e:
+        print(f"Error parsing YAML: {e}")
+
+
+def load_linear_track_config():
+    # Loading the robotic config file
+    try:
+        with open(Linear_Track_Config_Path, 'r') as file:
             settings = yaml.safe_load(file)
             print("Setting file successfully loaded.")
             return settings
@@ -66,7 +81,7 @@ class xArm(object):
         self._ignore_exit_state = False
         self.robot_init()
 
-        settings = load_arm5_config()
+        settings = load_arm_config()
         self._host = settings['host']
         self._port = settings['port']
         self._tcp_speed = settings['Tcp_Speed']
@@ -150,12 +165,48 @@ class xArm(object):
             print(f"Joints moved to {angles}.")
 
 
+class LinearTrack(object):
+    """
+    A class to handle the actions of the linear track with code checking
+    """
+    def __init__(self, track):
+        self.track = track
+        try:
+            settings = load_linear_track_config()
+            self.speed = settings["Speed"]
+            self.acc = settings["Acc"]
+        except (KeyError, FileNotFoundError) as e:
+            print(f"Error loading linear track config: {str(e)}")
+            self.speed = 200  # Default fallback value
+            self.acc = 1000 # Default fallback value
+
+    def enable(self):
+        # Enable the linear track with error checking
+        code = self.track.arm.set_linear_track_enable(True)
+        return self.track.check_code(code, 'set_linear_track_enable')
+
+    def set_speed(self, speed):
+        code = self.track.arm.set_linear_track_speed(speed)
+        return self.track.check_code(code, 'set_linear_track_speed')
+
+    def move_to(self, position, speed=None, wait=True):
+        # Move the linear track with error checking
+        if speed is None:
+            speed = self.speed
+        code = self.track.arm.set_linear_track_pos(speed=speed, pos=position, wait=wait)
+        return self.track.check_code(code, 'set_linear_track_pos')
+
+    def reset(self):
+        # Reset the linear track to home by moving to position 0
+        return self.move_to(0)
+
+
 class BioGripper(object):
     """
     A class to handle the actions of bio gripper with code checking
     """
-    def __init__(self, robot):
-        self.robot = robot
+    def __init__(self, gripper):
+        self.gripper = gripper
         try:
             self.gripper_speed = load_gripper_config()["GRIPPER_SPEED"]
         except (KeyError, FileNotFoundError) as e:
@@ -164,22 +215,22 @@ class BioGripper(object):
 
     def enable(self):
         # Enable the bio gripper with error checking
-        code = self.robot.arm.set_bio_gripper_enable(True)
-        return self.robot.check_code(code, 'set_bio_gripper_enable')
+        code = self.gripper.arm.set_bio_gripper_enable(True)
+        return self.gripper.check_code(code, 'set_bio_gripper_enable')
 
     def open(self, speed=None, wait=True):
         # Open the bio gripper with error checking
         speed = self.gripper_speed
-        code = self.robot.arm.open_bio_gripper(speed=speed, wait=wait)
-        return self.robot.check_code(code, 'open_bio_gripper')
+        code = self.gripper.arm.open_bio_gripper(speed=speed, wait=wait)
+        return self.gripper.check_code(code, 'open_bio_gripper')
 
     def close(self, speed=None, wait=True):
         # Close the bio gripper with error checking
         speed = self.gripper_speed
-        code = self.robot.arm.close_bio_gripper(speed=speed, wait=wait)
-        return self.robot.check_code(code, 'close_bio_gripper')
+        code = self.gripper.arm.close_bio_gripper(speed=speed, wait=wait)
+        return self.gripper.check_code(code, 'close_bio_gripper')
 
 
 if __name__ == "__main__":
-    setting = load_arm5_config()
+    setting = load_arm_config()
     host = setting['host']
