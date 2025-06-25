@@ -20,6 +20,7 @@ from src.PyxArm import xArm, BioGripper, LinearTrack
 if __name__ == "__main__":
     # --- Connect to the xArm Simulator ---
     # Use '127.0.0.1' for the docker simulator
+    
     # `check_joint_limit=False` is recommended for the simulator
     print("Connecting to xArm simulator at 127.0.0.1")
     try:

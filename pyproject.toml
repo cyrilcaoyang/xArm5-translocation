@@ -18,6 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "xarm-python-sdk",
-    "PyYAML"
+    "PyYAML",
+    "flask"
 ]
 

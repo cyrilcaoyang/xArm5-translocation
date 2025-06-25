@@ -1,8 +1,10 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
 
 # Distribution / packaging
 .Python
@@ -18,6 +20,7 @@ parts/
 sdist/
 var/
 wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -45,6 +48,7 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+cover/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -57,16 +61,36 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.envrc
 
-# VS Code
+# Type checkers
+.mypy_cache/
+.pyre/
+.pytype/
+
+# Linting
+.ruff_cache/
+
+# Profiling
+.prof
+.prof.json
+*.prof
+
+# IDE settings
 .vscode/
-
-# PyCharm
 .idea/
 
-# Mac
+# OS-specific
 .DS_Store
+Thumbs.db
 
-# SQLite
+# Databases and logs
+*.sqlite
 *.sqlite3
-*.db 
+*.db
+*.db-journal
+*.log
+
+# Documentation
+docs/_build/
+site/ 
