@@ -87,7 +87,7 @@ Thumbs.db
 # Databases and logs
 *.sqlite
 *.sqlite3
-*.db
+*.db 
 *.db-journal
 *.log
 
