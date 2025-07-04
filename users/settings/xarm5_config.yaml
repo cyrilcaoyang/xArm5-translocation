@@ -1,0 +1,15 @@
+# This file defines the parameters of the xARM5
+# Please use an ethernet cable and connect the robot to intranet via LAN
+# According to the documentation, the IP should be in the following range:
+---
+# Robot model configuration
+model: 5              # xArm model number (5, 6, or 7)
+num_joints: 5          # Number of joints for this model
+
+# Network configuration
+host: '192.168.1.237'
+port: 18333
+Tcp_Speed: 100
+Tcp_Acc: 2000
+Angle_Speed: 20
+Angle_Acc: 500

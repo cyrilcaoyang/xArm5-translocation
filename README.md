@@ -1,81 +1,108 @@
-# XArm Translocation Control
+# xArm Translocation Control
 
-A Python package for controlling xArm robotic arms with integrated gripper and linear track support for translocation tasks. This package provides a unified controller that supports multiple gripper types and optional linear track functionality.
+A comprehensive Python package for controlling UFACTORY xArm robotic arms with integrated gripper and linear track support for translocation tasks. This package provides a unified controller optimized for xArm5 robots with extensible multi-model architecture, supporting multiple gripper types and optional linear track functionality.
 
-## Features
+## ✨ Features
 
-- **Unified Control**: Single `XArmController` class manages arm, gripper, and linear track
-- **Multiple Gripper Support**: BIO, Standard, RobotIQ grippers, or no gripper
-- **Movement Types**: Joint, linear/Cartesian, relative, named locations, velocity control
-- **State Management**: Comprehensive component state tracking and error handling
-- **Flexible Configuration**: Auto-enable or manual component control
-- **Safety Features**: Component validation, error history, position caching
+- ** Multi-Model Architecture**: Designed for xArm5, xArm6, xArm7, and xArm850 with extensible model detection (currently optimized for xArm5)
+- ** Unified Control**: Single `XArmController` class manages arm, gripper, and linear track
+- ** Multiple Gripper Support**: BIO, Standard, RobotIQ grippers, or no gripper
+- ** Movement Types**: Joint, Cartesian/linear, relative, named locations, velocity control
+- ** State Management**: Comprehensive component state tracking and error handling
+- ** Flexible Configuration**: Model-specific configs with auto-enable or manual component control
+- ** Safety Features**: Component validation, error history, position caching
+- ** Docker Integration**: Simplified simulator setup with containerized UFACTORY Studio
+- ** Demo Suite**: Comprehensive examples for all functionality
 
-## Installation
+## 📁 Project Structure
 
-### With a real robot
-
-Please install SDK first in your environment from the [xArm-Python-SDK](https://github.com/xArm-Developer/xArm-Python-SDK) repository.
-
-  1. `git clone https://github.com/xArm-Developer/xArm-Python-SDK.git`
-  2. `cd xArm-Python-SDK`
-  3. `python setup.py install`
-
-### With the simulator (no robot required)
-
-It's possible to use a simulator to run the UFACTORY Studio UI and use Blockly without being connected to a physical xArm. This is based on a docker image.
-
-Reference: [UFACTORY Studio simulation](https://forum.ufactory.cc/t/ufactory-studio-simulation/3719)
-
-#### 1. Pull the docker image
-
-```bash
-docker pull danielwang123321/uf-ubuntu-docker
+```
+xArm5-translocation/
+├── src/
+│   └── xarm_controller.py          # Main unified controller
+├── users/
+│   ├── examples/                   # Demo scripts
+│   │   ├── demo_5joints.py         # xArm5 joint testing
+│   │   ├── demo_gripper.py         # Gripper functionality
+│   │   ├── demo_linear_motor.py    # Linear track operations
+│   │   └── demo_docker_sim.py      # Docker simulator demo
+│   ├── settings/                   # Configuration files
+│   │   ├── xarm5_config.yaml       # xArm5 specific config
+│   │   ├── bio_gripper_config.yaml # Gripper settings
+│   │   ├── linear_track_config.yaml# Track parameters
+│   │   └── location_config.yaml    # Named positions
+│   ├── docker/                     # Docker simulator tools
+│   │   ├── docker_setup.sh         # Simplified setup script
+│   │   └── README.md              # Docker documentation
+│   └── manuals/                   # Hardware documentation
+│       ├── xArm-Developer-Manual-V1.10.0.pdf
+│       └── Linear-Motor-V2.0.04.pdf
+├── test/                          # Comprehensive test suite
+│   ├── test_xarm_controller.py    # Controller unit tests
+│   ├── test_docker_integration.py # Docker integration tests
+│   └── TESTING.md                 # Testing documentation
+├── pyproject.toml                 # Project & testing configuration
+└── README.md                      # This file
 ```
 
-#### 2. Create and run the container
+## 🚀 Installation
 
-The following command includes web simulation and SDK ports.
+### Option 1: With Real Hardware
 
-```bash
-docker run -it --name uf_software -p 18333:18333 -p 502:502 -p 503:503 -p 504:504 -p 30000:30000 -p 30001:30001 -p 30002:30002 -p 30003:30003 danielwang123321/uf-ubuntu-docker
-```
-
-#### 3. Run the xArm robot firmware and UFACTORY Studio
-
-For example, to start the UFACTORY Studio and firmware of xArm 6, run the following inside the container.
+Install the xArm Python SDK in your environment:
 
 ```bash
-/xarm_scripts/xarm_start.sh 6 6
+# Clone and install xArm Python SDK
+git clone https://github.com/xArm-Developer/xArm-Python-SDK.git
+cd xArm-Python-SDK
+python setup.py install
+
+# Install this package
+cd /path/to/xArm5-translocation
+pip install -e .
+
+# Optional: Install with development tools
+pip install -e ".[dev]"        # Includes testing + linting tools
+pip install -e ".[test]"       # Just testing dependencies
 ```
 
-The arguments `6 6` correspond to xArm 6. Change it according to your robot:
-*   `5 5`: xArm 5
-*   `6 6`: xArm 6
-*   `7 7`: xArm 7
-*   `6 9`: Lite 6
-*   `6 12`: 850
+### Option 2: With Docker Simulator (No Hardware Required)
 
-#### 4. Access the UFACTORY Studio web simulation
+Use the simplified Docker setup for development and testing:
 
-Open a web browser and go to `http://127.0.0.1:18333` or `http://localhost:18333`.
+```bash
+# Navigate to docker directory
+cd users/docker
 
-If a prompt "Unable to get robot SN…" appears, click "Close" to proceed.
+# Start simulator (xArm6 by default)
+./docker_setup.sh start
 
-#### 5. Connect to the simulator from your code
+# Or start specific model
+./docker_setup.sh start 5    # xArm5
+./docker_setup.sh start 7    # xArm7
 
-To connect to the simulated robot from your Python code, use the IP address `127.0.0.1`.
+# Check status
+./docker_setup.sh status
 
-See the example in `examples/docker_simulation_example.py` for simulator usage.
+# Stop simulator
+./docker_setup.sh stop
+```
 
-## Quick Start
+**Simulator Access:**
+- Web UI: http://localhost:18333
+- SDK Connection: `127.0.0.1`
+- Ports: 18333, 502-504, 30000-30003
 
-### Basic Usage
+See `users/docker/README.md` for detailed Docker setup instructions.
+
+## ⚡ Quick Start
+
+### Basic Usage (Auto-Detection)
 
 ```python
 from src.xarm_controller import XArmController
 
-# Create controller with auto-enable (simplest setup)
+# Auto-detect robot model and enable all components
 controller = XArmController(
     gripper_type='bio',    # 'bio', 'standard', 'robotiq', or 'none'
     enable_track=True,     # Enable linear track
@@ -84,68 +111,126 @@ controller = XArmController(
 
 # Initialize and connect
 if controller.initialize():
-    # Move using joint angles
-    controller.move_joints([0, -30, 0, 30, 0, 0])
+    print(f"Connected to {controller.model_name} with {controller.num_joints} joints")
     
-    # Move using Cartesian coordinates (linear movement)
+    # Move using joint angles (adapts to robot model)
+    angles = [0] * controller.num_joints  # Zero position for any model
+    controller.move_joints(angles)
+    
+    # Move using Cartesian coordinates
     controller.move_to_position(x=300, y=0, z=300)
     
-    # Move relative to current position
-    controller.move_relative(dx=50, dz=10)
-    
-    # Control gripper (works with any configured gripper type)
+    # Control gripper
     controller.open_gripper()
     controller.close_gripper()
     
-    # Control linear track
-    controller.move_track_to_position(100)
-    
-    # Disconnect when done
     controller.disconnect()
 ```
 
-### Advanced Usage with Manual Component Control
+### Specific Model Usage
 
 ```python
-from src.xarm_controller import XArmController
-
-# Create controller without auto-enabling components
+# Force specific model (loads corresponding config file)
 controller = XArmController(
+    model=5,              # Loads xarm5_config.yaml
     gripper_type='bio',
-    enable_track=True,
-    auto_enable=False  # Manual control
+    auto_enable=True
 )
 
-# Initialize connection only
+# Or for xArm850
+controller = XArmController(
+    model='850',          # Loads xarm850_config.yaml
+    gripper_type='bio'
+)
+```
+
+### Simulator Usage
+
+```python
+# Connect to Docker simulator
+controller = XArmController(
+    config_path='users/settings/',
+    model=6               # Match your started simulator
+)
+
+# Initialize for simulator (IP: 127.0.0.1 from config)
 controller.initialize()
 
-# Check system status
-status = controller.get_system_status()
-print(f"Connection: {status['connection']['state']}")
-
-# Enable components when ready
-if controller.enable_gripper_component():
-    print("Gripper ready")
-
-if controller.enable_track_component():
-    print("Track ready")
-
-# Check component states
-if controller.is_component_enabled('gripper'):
-    controller.close_gripper()
-
-# Get error history if needed
-errors = controller.get_error_history()
+# Run your code - works identically to real hardware
+controller.move_joints([0, -30, 0, 30, 0, 0])
 ```
+
+## 🎯 Demo Scripts
+
+Comprehensive examples in `users/examples/`:
+
+### 1. 5-Joint Testing (`demo_5joints.py`)
+```bash
+# Test all 5 joints on xArm5
+python demo_5joints.py --simulate    # Simulation mode
+python demo_5joints.py --real        # Real hardware
+```
+
+### 2. Gripper Testing (`demo_gripper.py`)
+```bash
+# Test gripper functionality
+python demo_gripper.py --simulate
+python demo_gripper.py --real
+```
+
+### 3. Linear Motor Demo (`demo_linear_motor.py`)
+```bash
+# Test linear track with adaptive joint positioning
+python demo_linear_motor.py --simulate
+python demo_linear_motor.py --real
+```
+
+### 4. Docker Simulator (`demo_docker_sim.py`)
+```bash
+# Complete simulator demonstration
+python demo_docker_sim.py
+```
+
+All demos support both simulation and real hardware modes. The `demo_5joints.py` script is specifically optimized for xArm5 robots and has been thoroughly tested.
+
+## ⚙️ Configuration
+
+### Model-Specific Configurations
+
+The controller supports multiple robot models. Currently available configuration:
+
+- `xarm5_config.yaml` - xArm5 (5 joints) - Available
+- Additional model configs can be created following the same pattern
+
+Example configuration structure:
+```yaml
+# Robot model configuration
+model: 5              # Robot model number
+num_joints: 5         # Number of joints
+
+# Network configuration  
+host: '192.168.1.237' # Robot IP address
+port: 18333
+Tcp_Speed: 100
+Tcp_Acc: 2000
+Angle_Speed: 20
+Angle_Acc: 500
+```
+
+### Component Configurations
+
+- `bio_gripper_config.yaml` - BIO gripper settings
+- `linear_track_config.yaml` - Linear track parameters
+- `location_config.yaml` - Named positions
 
 ### Named Locations
 
-Configure predefined positions in `settings/location_config.yaml`:
+Define reusable positions in `location_config.yaml`:
 
 ```yaml
 home:
   x: 300
-  y: 0  
+  y: 0
   z: 300
   roll: 180
   pitch: 0
@@ -160,36 +245,198 @@ pickup_position:
   yaw: 0
 ```
 
-Then use them in code:
-
+Usage:
 ```python
 controller.move_to_named_location('home')
 controller.move_to_named_location('pickup_position')
 ```
 
-## Configuration
+## 🧪 Testing
 
-The controller uses YAML configuration files in the `settings/` directory:
+Comprehensive test suite with Docker integration:
 
-- `xarm_config.yaml` - Robot connection and movement parameters
-- `bio_gripper_config.yaml` - BIO gripper settings
-- `linear_track_config.yaml` - Linear track parameters  
-- `location_config.yaml` - Named positions
+```bash
+# Run all tests (uses pyproject.toml configuration)
+pytest
 
-## Architecture
+# Run specific test categories  
+pytest test/test_xarm_controller.py      # Unit tests
+pytest test/test_docker_integration.py   # Docker integration
+pytest test/test_with_docker.py          # Docker functionality
 
-The `XArmController` provides a unified interface that replaces the previous separate classes:
+# Run with different markers
+pytest -m "not integration"             # Skip integration tests
+pytest -m "not docker"                  # Skip Docker tests
+pytest -m "not slow"                    # Skip slow tests
 
-- **Previous**: `xArm`, `BioGripper`, `LinearTrack` classes
-- **New**: Single `XArmController` with integrated functionality
-- **Benefits**: Simplified API, better state management, enhanced safety
+# Run with coverage
+pytest --cov-report=html
 
-## Examples
+# Install test dependencies
+pip install -e ".[test]"                # Just testing
+pip install -e ".[dev]"                 # Development tools
+```
 
-See `examples/docker_simulation_example.py` for a complete demonstration including:
+**Note**: Pytest configuration is in `pyproject.toml` with comprehensive markers and coverage settings.
 
-- Component initialization and status checking
-- Joint and Cartesian movements  
-- Gripper control
-- Linear track operation
-- Error handling and disconnection
+See `test/TESTING.md` for detailed testing documentation.
+
+## 🏗️ Architecture
+
+### Unified Controller Design
+
+The `XArmController` replaces multiple separate classes with a single, integrated interface:
+
+**Previous Architecture:**
+- Separate `xArm`, `BioGripper`, `LinearTrack` classes
+- Manual coordination between components
+- Model-specific implementations
+
+**Current Architecture:**
+- Single `XArmController` with integrated functionality
+- Automatic model detection and adaptation
+- Unified state management and error handling
+- Component-agnostic API
+
+### Multi-Model Support
+
+```python
+# Controller designed to support multiple models with identical API
+# Currently optimized for xArm5, extensible to other models
+controller = XArmController(model=5)  # xArm5 with 5 joints
+controller.move_joints([0] * controller.num_joints)  # Adapts to model's joint count
+```
+
+### Component States
+
+The controller tracks states for all components:
+- `UNKNOWN` - Not yet initialized
+- `ENABLING` - Currently being enabled
+- `ENABLED` - Ready for use
+- `DISABLED` - Intentionally disabled
+- `ERROR` - Error state
+
+## 🔧 Advanced Usage
+
+### Manual Component Control
+
+```python
+# Disable auto-enable for manual control
+controller = XArmController(auto_enable=False)
+controller.initialize()  # Only connects, doesn't enable components
+
+# Check status before enabling
+status = controller.get_system_status()
+print(f"Connection: {status['connection']['state']}")
+
+# Enable components when ready
+if controller.enable_gripper_component():
+    print("Gripper ready")
+
+if controller.enable_track_component():
+    print("Linear track ready")
+
+# Check individual component states
+if controller.is_component_enabled('gripper'):
+    controller.close_gripper()
+```
+
+### Error Handling and Monitoring
+
+```python
+# Get comprehensive system status
+status = controller.get_system_status()
+print(f"Arm: {status['arm']['state']}")
+print(f"Gripper: {status['gripper']['state']}")
+print(f"Track: {status['track']['state']}")
+
+# Monitor error history
+errors = controller.get_error_history(count=5)
+for error in errors:
+    print(f"Error {error['code']}: {error['message']}")
+
+# Check if robot is responsive
+if controller.is_alive:
+    print("Robot is responding")
+```
+
+### Velocity Control
+
+```python
+# Set Cartesian velocities (mm/s, deg/s)
+controller.set_cartesian_velocity(vx=50, vy=0, vz=10)
+
+# Set joint velocities (deg/s)
+joint_velocities = [10, 0, 0, 0, 0, 0]  # Move only first joint
+controller.set_joint_velocity(joint_velocities)
+
+# Stop all motion
+controller.stop_motion()
+```
+
+## 🐳 Docker Integration
+
+The package includes simplified Docker tools for running UFACTORY Studio simulator:
+
+### Quick Docker Setup
+
+```bash
+cd users/docker
+./docker_setup.sh start 6    # Start xArm6 simulator
+```
+
+### Docker Commands
+
+| Command | Description |
+|---------|-------------|
+| `start [5\|6\|7]` | Start simulator with specified model |
+| `stop` | Stop and remove simulator |
+| `status` | Show simulator status |
+| `help` | Show available commands |
+
+### Docker Development Workflow
+
+1. **Start simulator**: `./docker_setup.sh start 6`
+2. **Develop code**: Use `127.0.0.1` as robot IP
+3. **Test with demo**: `python demo_docker_sim.py`
+4. **Stop when done**: `./docker_setup.sh stop`
+
+## 📖 Examples and Demos
+
+| Demo | Purpose | Models | Features |
+|------|---------|--------|----------|
+| `demo_5joints.py` | xArm5 joint testing | xArm5 | Individual joint movements, gripper |
+| `demo_gripper.py` | Gripper functionality | xArm5+ | Open/close operations, error handling |
+| `demo_linear_motor.py` | Linear track demo | xArm5+ | Track movement, adaptive positioning |
+| `demo_docker_sim.py` | Simulator demo | xArm5+ | Complete Docker workflow |
+
+All demos support both `--simulate` and `--real` modes.
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass: `pytest`
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support
+
+- **Documentation**: Check `users/manuals/` for hardware documentation
+- **Docker Issues**: See `users/docker/README.md`
+- **Testing**: Refer to `test/TESTING.md`
+- **Examples**: Run demos in `users/examples/`
+
+## 🔄 Version History
+
+- **v0.2.0**: Enhanced project structure, consolidated pytest config in pyproject.toml, improved dependencies, comprehensive testing framework
+- **v0.1.0**: Multi-model support, Docker integration, comprehensive demos  
+- **v0.0.1**: Initial unified controller implementation
+
+---
+
+For detailed API documentation and advanced usage examples, explore the demo scripts in `users/examples/`.

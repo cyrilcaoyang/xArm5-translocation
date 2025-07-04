@@ -6,15 +6,19 @@ A dedicated demonstration script for linear motor control with gripper operation
 This script demonstrates moving the linear track to specific positions (100, 200, 400, 700mm)
 while keeping the robot arm joints at zero and performing gripper operations at each position.
 
+Supports: xArm5 (5 joints), xArm6 (6 joints), xArm7 (7 joints), xArm850 (6 joints)
+Auto-adapts joint positions based on robot model configuration.
+
 Features:
-- Keeps arm joints at [0, 0, 0, 0, 0, 0] throughout the demo
+- Keeps arm joints at zero throughout the demo (adapts to model)
 - Homes linear motor to position 0
 - Moves to specified positions: 100, 200, 400, 700mm
 - Performs open/close gripper cycle at each position
 - Works with both real hardware and simulation mode
+- Automatic model detection from configuration
 
 Usage:
-    python examples/linear_motor_demo.py [--simulate]
+    python demo_linear_motor.py [--simulate]
     
 Options:
     --simulate    Run in simulation mode (no real hardware required)
@@ -31,8 +35,8 @@ import time
 import os
 import argparse
 
-# Add the src directory to the Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Add the project root directory to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from src.xarm_controller import XArmController
 
@@ -161,6 +165,17 @@ def main():
     simulate_mode = args.simulate
     robot_host = args.host
     
+    # For real hardware, prompt for IP address if not specified
+    if not simulate_mode and robot_host == '127.0.0.1':
+        try:
+            robot_host = input("Enter robot IP address (default: 192.168.1.237): ").strip()
+            if not robot_host:
+                robot_host = '192.168.1.237'
+        except (EOFError, KeyboardInterrupt):
+            # Handle non-interactive environments
+            robot_host = '192.168.1.237'
+            print(f"Using default IP address: {robot_host}")
+    
     # Target positions for demonstration
     target_positions = [100, 200, 400, 700]
     
@@ -184,7 +199,7 @@ def main():
         print("   [SIM] ✓ Controller initialized")
         
         print("\n2. [SIM] Setting arm joints to zero position...")
-        print("   [SIM] ✓ Arm joints set to [0, 0, 0, 0, 0, 0]")
+        print("   [SIM] ✓ Arm joints set to zero (adapts to robot model)")
         
         print("\n3. [SIM] Homing linear motor...")
         print("   [SIM] ✓ Linear motor homed to position 0")
@@ -201,20 +216,20 @@ def main():
         print(f"\n🔗 Connecting to robot at {robot_host}")
         
         try:
-            # Create XArmController
+            # Create XArmController - use absolute path to avoid path resolution issues
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            config_path = os.path.join(script_dir, '..', 'settings') + '/'
+            
             controller = XArmController(
-                config_path='settings/',
+                config_path=config_path,
                 gripper_type='bio',
                 enable_track=True,
                 auto_enable=False
             )
             
-            # Connect to robot
-            if robot_host == '127.0.0.1':
-                # Docker simulator - need special handling
-                from xarm.wrapper import XArmAPI
-                controller.arm = XArmAPI(robot_host, check_joint_limit=False)
-            # For real hardware, the controller will create the connection normally
+            # Override robot IP if specified
+            if robot_host != '127.0.0.1':
+                controller.xarm_config['host'] = robot_host
             
             # Initialize
             if not controller.initialize():
@@ -255,8 +270,10 @@ def main():
             
             # Set arm to zero position
             print("\n2. Setting arm joints to zero position...")
-            if controller.move_joints(angles=[0, 0, 0, 0, 0, 0]):
-                print("   ✓ Arm joints set to [0, 0, 0, 0, 0, 0]")
+            num_joints = controller.get_num_joints()
+            zero_angles = [0] * num_joints
+            if controller.move_joints(angles=zero_angles):
+                print(f"   ✓ Arm joints set to {zero_angles}")
             else:
                 print("   ⚠️  Could not move joints (may already be at zero)")
             
@@ -264,7 +281,7 @@ def main():
             current_joints = controller.get_current_joints()
             if current_joints:
                 print(f"   📍 Current joints: {current_joints}")
-                if all(abs(joint) < 1.0 for joint in current_joints):
+                if isinstance(current_joints, (list, tuple)) and all(abs(joint) < 1.0 for joint in current_joints):
                     print("   ✓ Joints confirmed at zero position")
             
             # Home linear motor (if available)
@@ -282,13 +299,15 @@ def main():
             # Final verification
             print(f"\n4. Final verification:")
             final_joints = controller.get_current_joints()
-            if final_joints:
+            if final_joints is not None:
                 print(f"   📍 Final arm joints: {final_joints}")
-                if all(abs(joint) < 1.0 for joint in final_joints):
+                if isinstance(final_joints, (list, tuple)) and all(abs(joint) < 1.0 for joint in final_joints):
                     print("   ✓ Arm joints maintained at zero throughout demo")
                 else:
                     print("   ⚠️  Arm joints have moved - resetting to zero...")
-                    controller.move_joints(angles=[0, 0, 0, 0, 0, 0])
+                    num_joints = controller.get_num_joints()
+                    zero_angles = [0] * num_joints
+                    controller.move_joints(angles=zero_angles)
             
             print("   ✅ Linear motor demonstration completed successfully!")
             

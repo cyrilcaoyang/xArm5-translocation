@@ -8,7 +8,10 @@ This example demonstrates:
 2. Gripper operations (open/close)
 3. Simple joint movements
 
-For advanced linear motor control, see: examples/linear_motor_demo.py
+Supports: xArm5 (5 joints), xArm6 (6 joints), xArm7 (7 joints), xArm850 (6 joints)
+Auto-detects robot model from configuration.
+
+For advanced linear motor control, see: demo_linear_motor.py
 
 Please run the docker simulator first and start the xArm firmware inside the container.
 Refer to the README.md for instructions.

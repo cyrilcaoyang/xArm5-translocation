@@ -2,11 +2,14 @@
 """
 Simple Gripper Test Script
 
-This script connects to the xArm robot and tests the gripper (end effector)
+This script connects to xArm robots and tests the gripper (end effector)
 open and close functionality.
 
+Supports: xArm5 (5 joints), xArm6 (6 joints), xArm7 (7 joints), xArm850 (6 joints)
+Auto-detects robot model from configuration.
+
 Usage:
-    python gripper_test.py --real --host 192.168.1.237
+    python demo_gripper.py --real
 """
 
 import os

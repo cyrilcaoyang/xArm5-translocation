@@ -19,7 +19,7 @@ class XArmController:
     multiple gripper types, handles optional components gracefully, and provides
     comprehensive state tracking.
     """
-    def __init__(self, config_path='settings/', gripper_type='bio', enable_track=True, auto_enable=True):
+    def __init__(self, config_path='settings/', gripper_type='bio', enable_track=True, auto_enable=True, model=None):
         """
         Initializes the XArmController.
 
@@ -28,10 +28,40 @@ class XArmController:
             gripper_type (str): Type of gripper ('bio', 'standard', 'robotiq', or 'none')
             enable_track (bool): Whether to enable linear track functionality
             auto_enable (bool): Whether to automatically enable components during initialize()
+            model (int|str): Robot model (5, 6, 7, or '850'). If None, tries to auto-detect.
         """
+        # Determine config file to load
+        if model is not None:
+            config_file = f"xarm{model}_config.yaml"
+        else:
+            # Try to find any xarm config file and use it
+            import glob
+            import os
+            pattern = os.path.join(config_path, "xarm*_config.yaml")
+            config_files = glob.glob(pattern)
+            if config_files:
+                config_file = os.path.basename(config_files[0])
+                print(f"Auto-detected config file: {config_file}")
+            else:
+                # Fallback to xarm5
+                config_file = "xarm5_config.yaml"
+                print(f"No config files found, defaulting to: {config_file}")
+        
         # Load configurations
-        self.xarm_config = self._load_yaml(f"{config_path}xarm_config.yaml")
+        self.xarm_config = self._load_yaml(f"{config_path}{config_file}")
         self.location_config = self._load_yaml(f"{config_path}location_config.yaml")
+        
+        # Robot model information
+        self.model = self.xarm_config.get('model', 5)
+        self.num_joints = self.xarm_config.get('num_joints', 5)
+        
+        # Handle special case for 850 model
+        if str(self.model) == '850':
+            self.model_name = 'xArm850'
+        else:
+            self.model_name = f'xArm{self.model}'
+            
+        print(f"Configured for {self.model_name} with {self.num_joints} joints")
         
         # Gripper configuration - load based on type
         self.gripper_type = gripper_type.lower()
@@ -797,6 +827,8 @@ class XArmController:
     def get_system_info(self):
         """Get information about the configured system."""
         info = {
+            'model': self.model,
+            'num_joints': self.num_joints,
             'gripper_type': self.gripper_type,
             'has_gripper': self.has_gripper(),
             'has_track': self.has_track(),
@@ -806,6 +838,14 @@ class XArmController:
             'component_states': self.get_component_states()
         }
         return info
+    
+    def get_model(self):
+        """Get the robot model number."""
+        return self.model
+    
+    def get_num_joints(self):
+        """Get the number of joints for this robot model."""
+        return self.num_joints
 
     def disconnect(self):
         """Disconnects from the robot arm."""
