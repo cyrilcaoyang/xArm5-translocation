@@ -3,6 +3,8 @@ import time
 import traceback
 from enum import Enum
 from xarm.wrapper import XArmAPI
+import math
+import os
 
 class ComponentState(Enum):
     """Enum for component states"""
@@ -19,155 +21,282 @@ class XArmController:
     multiple gripper types, handles optional components gracefully, and provides
     comprehensive state tracking.
     """
-    def __init__(self, config_path='settings/', gripper_type='bio', enable_track=True, auto_enable=True, model=None):
+    def __init__(self, config_path='settings/', gripper_type='bio', enable_track=True, auto_enable=True, model=None, simulation_mode=False):
         """
         Initializes the XArmController.
 
         Args:
             config_path (str): The path to the directory containing configuration files.
             gripper_type (str): Type of gripper ('bio', 'standard', 'robotiq', or 'none')
-            enable_track (bool): Whether to enable linear track functionality
-            auto_enable (bool): Whether to automatically enable components during initialize()
-            model (int|str): Robot model (5, 6, 7, or '850'). If None, tries to auto-detect.
+            enable_track (bool): Whether to enable the linear track
+            auto_enable (bool): Whether to automatically enable components during initialization
+            model (int): xArm model (5, 6, 7, or 850). If None, will be detected from config
+            simulation_mode (bool): Enable simulation mode (no hardware required)
         """
-        # Determine config file to load
-        if model is not None:
-            config_file = f"xarm{model}_config.yaml"
-        else:
-            # Try to find any xarm config file and use it
-            import glob
-            import os
-            pattern = os.path.join(config_path, "xarm*_config.yaml")
-            config_files = glob.glob(pattern)
-            if config_files:
-                config_file = os.path.basename(config_files[0])
-                print(f"Auto-detected config file: {config_file}")
-            else:
-                # Fallback to xarm5
-                config_file = "xarm5_config.yaml"
-                print(f"No config files found, defaulting to: {config_file}")
+        # Store simulation mode first
+        self.simulation_mode = simulation_mode
         
         # Load configurations
-        self.xarm_config = self._load_yaml(f"{config_path}{config_file}")
-        self.location_config = self._load_yaml(f"{config_path}location_config.yaml")
+        self.config_path = config_path
+        self.xarm_config = self.load_config(os.path.join(config_path, 'xarm_config.yaml'))
+        self.gripper_config = self.load_config(os.path.join(config_path, 'bio_gripper_config.yaml'))
+        self.track_config = self.load_config(os.path.join(config_path, 'linear_track_config.yaml'))
         
-        # Robot model information
-        self.model = self.xarm_config.get('model', 5)
-        self.num_joints = self.xarm_config.get('num_joints', 5)
-        
-        # Handle special case for 850 model
-        if str(self.model) == '850':
-            self.model_name = 'xArm850'
-        else:
-            self.model_name = f'xArm{self.model}'
-            
-        print(f"Configured for {self.model_name} with {self.num_joints} joints")
-        
-        # Gripper configuration - load based on type
-        self.gripper_type = gripper_type.lower()
-        self.gripper_config = {}
-        if self.gripper_type == 'bio':
-            self.gripper_config = self._load_yaml(f"{config_path}bio_gripper_config.yaml")
-        elif self.gripper_type == 'standard':
-            self.gripper_config = self._load_yaml(f"{config_path}gripper_config.yaml")
-        elif self.gripper_type == 'robotiq':
-            self.gripper_config = self._load_yaml(f"{config_path}robotiq_gripper_config.yaml")
-        elif self.gripper_type == 'none':
-            print("No gripper configured")
-        else:
-            print(f"Warning: Unknown gripper type '{gripper_type}'. Supported types: 'bio', 'standard', 'robotiq', 'none'")
-        
-        # Linear track configuration - only load if enabled
+        # Component settings
+        self.gripper_type = gripper_type
         self.enable_track = enable_track
-        self.track_config = {}
-        if self.enable_track:
-            self.track_config = self._load_yaml(f"{config_path}linear_track_config.yaml")
-        else:
-            print("Linear track disabled")
-
-        # Auto-enable setting
         self.auto_enable = auto_enable
-
-        # Initialize arm connection (will be created during initialize())
-        self.arm = None
         
-        # Movement parameters from config
-        self.tcp_speed = self.xarm_config.get('Tcp_Speed', 100)
-        self.tcp_acc = self.xarm_config.get('Tcp_Acc', 2000)
-        self.angle_speed = self.xarm_config.get('Angle_Speed', 20)
-        self.angle_acc = self.xarm_config.get('Angle_Acc', 500)
+        # Determine model
+        self.model = model or self.xarm_config.get('model', 7)
+        self.num_joints = self.model if self.model in [5, 6, 7] else 6  # 850 has 6 joints
+        
+        # Initialize robot arm connection
+        if self.simulation_mode:
+            # In simulation mode, create a mock arm object
+            self.arm = self._create_simulation_arm()
+        else:
+            # Use official SDK with do_not_open parameter
+            self.arm = XArmAPI(self.xarm_config.get('host'), do_not_open=True)
+        
+        # Movement parameters
+        self.tcp_speed = self.xarm_config.get('tcp_speed', 100)
+        self.tcp_acc = self.xarm_config.get('tcp_acc', 2000)
+        self.angle_speed = self.xarm_config.get('angle_speed', 20)
+        self.angle_acc = self.xarm_config.get('angle_acc', 500)
+        
+        # Component states using enum
+        self.states = {
+            'connection': ComponentState.DISABLED,
+            'arm': ComponentState.DISABLED,
+            'gripper': ComponentState.DISABLED,
+            'track': ComponentState.DISABLED
+        }
+        
+        # Position tracking
+        self.last_position = [300, 0, 300, 180, 0, 0]  # Default position
+        self.last_joints = [0] * self.num_joints
+        self.last_track_position = 0
+        
+        # Error tracking
+        self.error_history = []
         
         # State tracking
         self.alive = True
         self._ignore_exit_state = False
         
-        # Component states
-        self.states = {
-            'arm': ComponentState.UNKNOWN,
-            'gripper': ComponentState.DISABLED if self.gripper_type == 'none' else ComponentState.UNKNOWN,
-            'track': ComponentState.DISABLED if not self.enable_track else ComponentState.UNKNOWN,
-            'connection': ComponentState.UNKNOWN
+        # Initialize simulation state and collision detection
+        if self.simulation_mode:
+            self.last_position = [300, 0, 300, 180, 0, 0]
+            self.last_joints = [0] * self.num_joints
+            self.last_track_position = 0
+            self._init_collision_detection()
+        
+        # Initialize if auto_enable is True
+        if auto_enable:
+            self.initialize()
+
+    def _create_simulation_arm(self):
+        """Create a mock arm object for simulation mode."""
+        class SimulationArm:
+            def __init__(self, controller):
+                self.controller = controller
+                self.connected = True
+                self.error_code = 0
+                self.state = 0
+                
+            def connect(self):
+                self.connected = True
+                return 0
+                
+            def disconnect(self):
+                self.connected = False
+                return 0
+                
+            def get_position(self):
+                return [0, self.controller.last_position]
+                
+            def get_servo_angle(self):
+                return [0, self.controller.last_joints]
+                
+            def set_servo_angle(self, angle, speed=None, mvacc=None, wait=True):
+                # Basic collision detection in simulation
+                if self.controller._check_joint_collision(angle):
+                    return 19  # Joint limit error code
+                self.controller.last_joints = angle[:]
+                return 0
+                
+            def set_position(self, x, y, z, roll, pitch, yaw, speed=None, mvacc=None, wait=True):
+                # Basic workspace limit checking
+                if self.controller._check_workspace_collision([x, y, z, roll, pitch, yaw]):
+                    return 11  # TCP limit error code
+                self.controller.last_position = [x, y, z, roll, pitch, yaw]
+                return 0
+                
+            def set_gripper_position(self, pos, wait=True):
+                return 0
+                
+            def set_linear_track_pos(self, pos, speed=None, wait=True):
+                self.controller.last_track_position = pos
+                return 0
+                
+            def get_linear_track_pos(self):
+                return [0, self.controller.last_track_position]
+                
+        return SimulationArm(self)
+    
+    def _init_collision_detection(self):
+        """Initialize collision detection parameters for simulation."""
+        # Joint limits for different models (degrees)
+        self.joint_limits = {
+            5: [(-360, 360), (-118, 120), (-225, 11), (-360, 360), (-97, 180)],
+            6: [(-360, 360), (-118, 120), (-225, 11), (-360, 360), (-97, 180), (-360, 360)],
+            7: [(-360, 360), (-118, 120), (-225, 11), (-360, 360), (-97, 180), (-360, 360), (-360, 360)],
+            850: [(-360, 360), (-118, 120), (-225, 11), (-360, 360), (-97, 180), (-360, 360)]
         }
         
-        # Last known positions
-        self.last_position = None
-        self.last_joints = None
-        self.last_track_position = None
+        # Workspace limits (mm, degrees)
+        self.workspace_limits = {
+            'x': (-700, 700),
+            'y': (-700, 700), 
+            'z': (-200, 700),
+            'roll': (-180, 180),
+            'pitch': (-180, 180),
+            'yaw': (-180, 180)
+        }
         
-        # Error tracking
-        self.last_error_code = 0
-        self.last_warn_code = 0
-        self.error_history = []
+        # Basic self-collision zones (simplified)
+        self.collision_zones = [
+            # Joint 1 and Joint 2 collision zone
+            {'joints': [0, 1], 'condition': lambda j: abs(j[0]) > 160 and j[1] < -90},
+            # Joint 2 and Joint 3 collision zone  
+            {'joints': [1, 2], 'condition': lambda j: j[1] > 100 and j[2] > 0},
+            # Add more collision zones as needed
+        ]
+    
+    def _check_joint_collision(self, joint_angles):
+        """Check for joint limit violations and self-collisions in simulation."""
+        if not self.simulation_mode:
+            return False
+            
+        # Assume angles are already in degrees for simulation
+        angles = joint_angles[:self.num_joints]  # Only check valid joints for this model
+        
+        # Check joint limits
+        limits = self.joint_limits.get(self.model, self.joint_limits[7])
+        for i, (angle, (min_limit, max_limit)) in enumerate(zip(angles, limits)):
+            if angle < min_limit or angle > max_limit:
+                print(f"Joint {i+1} limit exceeded: {angle}° (limits: {min_limit}° to {max_limit}°)")
+                return True
+        
+        # Check basic self-collision zones
+        for zone in self.collision_zones:
+            if all(i < len(angles) for i in zone['joints']):  # Ensure all joints exist
+                joint_subset = [angles[i] for i in zone['joints']]
+                if zone['condition'](joint_subset):
+                    joint_names = [f"Joint {i+1}" for i in zone['joints']]
+                    print(f"Self-collision detected between {' and '.join(joint_names)}")
+                    return True
+                
+        return False
+    
+    def _check_workspace_collision(self, pose):
+        """Check for workspace limit violations in simulation."""
+        if not self.simulation_mode:
+            return False
+            
+        x, y, z, roll, pitch, yaw = pose
+        
+        # Check workspace limits
+        if not (self.workspace_limits['x'][0] <= x <= self.workspace_limits['x'][1]):
+            print(f"X workspace limit exceeded: {x}mm (limits: {self.workspace_limits['x']})")
+            return True
+        if not (self.workspace_limits['y'][0] <= y <= self.workspace_limits['y'][1]):
+            print(f"Y workspace limit exceeded: {y}mm (limits: {self.workspace_limits['y']})")
+            return True
+        if not (self.workspace_limits['z'][0] <= z <= self.workspace_limits['z'][1]):
+            print(f"Z workspace limit exceeded: {z}mm (limits: {self.workspace_limits['z']})")
+            return True
+            
+        # Check orientation limits
+        if not (self.workspace_limits['roll'][0] <= roll <= self.workspace_limits['roll'][1]):
+            print(f"Roll limit exceeded: {roll}° (limits: {self.workspace_limits['roll']})")
+            return True
+        if not (self.workspace_limits['pitch'][0] <= pitch <= self.workspace_limits['pitch'][1]):
+            print(f"Pitch limit exceeded: {pitch}° (limits: {self.workspace_limits['pitch']})")
+            return True
+        if not (self.workspace_limits['yaw'][0] <= yaw <= self.workspace_limits['yaw'][1]):
+            print(f"Yaw limit exceeded: {yaw}° (limits: {self.workspace_limits['yaw']})")
+            return True
+            
+        return False
 
-    def _load_yaml(self, file_path):
-        """Loads a YAML file."""
+    def load_config(self, file_path):
+        """Load YAML configuration file."""
         try:
-            with open(file_path, 'r') as f:
-                return yaml.safe_load(f)
+            with open(file_path, 'r') as file:
+                return yaml.safe_load(file)
         except FileNotFoundError:
-            print(f"Warning: Configuration file not found at {file_path}")
+            print(f"Warning: Config file {file_path} not found, using defaults")
             return {}
-        except yaml.YAMLError as e:
-            print(f"Error parsing YAML file {file_path}: {e}")
+        except Exception as e:
+            print(f"Error loading config {file_path}: {e}")
             return {}
 
     def initialize(self):
         """
         Initializes the robot arm connection and sets the initial state.
         Components are only enabled if auto_enable=True.
+        Supports both hardware and simulation modes.
         """
-        print("Initializing Robot Arm...")
+        mode_str = "Simulation" if self.simulation_mode else "Hardware"
+        print(f"Initializing Robot Arm ({mode_str})...")
         
         try:
             self.states['connection'] = ComponentState.ENABLING
             
             # Create the XArmAPI connection if not already created
             if self.arm is None:
-                self.arm = XArmAPI(self.xarm_config.get('host'))
+                if self.simulation_mode:
+                    # Use official SDK simulation mode with do_not_open=True
+                    self.arm = XArmAPI(self.xarm_config.get('host'), do_not_open=True)
+                    print("Created simulation instance (do_not_open=True)")
+                else:
+                    # Normal hardware connection
+                    self.arm = XArmAPI(self.xarm_config.get('host'))
             
-            self.arm.connect()
-            
-            if not self.arm.connected:
-                self.states['connection'] = ComponentState.ERROR
-                print("Failed to connect to robot arm")
-                return False
+            # Connect only if not in simulation mode
+            if not self.simulation_mode:
+                self.arm.connect()
+                
+                if not self.arm.connected:
+                    self.states['connection'] = ComponentState.ERROR
+                    print("Failed to connect to robot arm")
+                    return False
+            else:
+                print("Simulation mode: Skipping hardware connection")
                 
             self.states['connection'] = ComponentState.ENABLED
             
-            # Clear any existing errors/warnings
-            self.arm.clean_warn()
-            self.arm.clean_error()
+            # Clear any existing errors/warnings (skip in simulation)
+            if not self.simulation_mode:
+                self.arm.clean_warn()
+                self.arm.clean_error()
             
             # Enable motion and set modes
             self.states['arm'] = ComponentState.ENABLING
-            self.arm.motion_enable(enable=True)
-            self.arm.set_mode(0)  # Position control mode
-            self.arm.set_state(0)  # Ready state
-            time.sleep(1)
             
-            # Register callbacks for monitoring
-            self.arm.register_error_warn_changed_callback(self._error_warn_callback)
-            self.arm.register_state_changed_callback(self._state_changed_callback)
+            if not self.simulation_mode:
+                self.arm.motion_enable(enable=True)
+                self.arm.set_mode(0)  # Position control mode
+                self.arm.set_state(0)  # Ready state
+                time.sleep(1)
+                
+                # Register callbacks for monitoring
+                self.arm.register_error_warn_changed_callback(self._error_warn_callback)
+                self.arm.register_state_changed_callback(self._state_changed_callback)
+            else:
+                print("Simulation mode: Skipping motion enable and callbacks")
             
             self.states['arm'] = ComponentState.ENABLED
             
@@ -179,7 +308,7 @@ class XArmController:
                 if self.enable_track:
                     self.enable_track_component()
             
-            print("Robot Arm Initialized.")
+            print(f"Robot Arm Initialized ({mode_str}).")
             self._update_positions()
             return True
             
@@ -199,16 +328,22 @@ class XArmController:
             self.states['gripper'] = ComponentState.ENABLING
             success = False
             
-            if self.gripper_type == 'bio':
-                success = self.enable_bio_gripper()
-            elif self.gripper_type == 'standard':
-                success = self.enable_standard_gripper()
-            elif self.gripper_type == 'robotiq':
-                success = self.initialize_robotiq_gripper()
+            if self.simulation_mode:
+                # In simulation mode, assume gripper is always available
+                success = True
+                print(f"Simulation mode: {self.gripper_type.title()} gripper enabled (simulated)")
+            else:
+                if self.gripper_type == 'bio':
+                    success = self.enable_bio_gripper()
+                elif self.gripper_type == 'standard':
+                    success = self.enable_standard_gripper()
+                elif self.gripper_type == 'robotiq':
+                    success = self.initialize_robotiq_gripper()
             
             if success:
                 self.states['gripper'] = ComponentState.ENABLED
-                print(f"{self.gripper_type.title()} gripper enabled")
+                if not self.simulation_mode:
+                    print(f"{self.gripper_type.title()} gripper enabled")
             else:
                 self.states['gripper'] = ComponentState.ERROR
                 print(f"Failed to enable {self.gripper_type} gripper")
@@ -228,12 +363,19 @@ class XArmController:
             
         try:
             self.states['track'] = ComponentState.ENABLING
-            success = self.enable_linear_track()
+            
+            if self.simulation_mode:
+                # In simulation mode, assume track is always available
+                success = True
+                print("Simulation mode: Linear track enabled (simulated)")
+            else:
+                success = self.enable_linear_track()
             
             if success:
                 self.states['track'] = ComponentState.ENABLED
-                print("Linear track enabled")
-                self._update_track_position()
+                if not self.simulation_mode:
+                    print("Linear track enabled")
+                    self._update_track_position()
             else:
                 self.states['track'] = ComponentState.ERROR
                 print("Failed to enable linear track")
@@ -298,6 +440,12 @@ class XArmController:
             return
             
         try:
+            if self.simulation_mode:
+                # In simulation mode, use default positions
+                self.last_position = [300, 0, 300, 180, 0, 0]  # Default Cartesian position
+                self.last_joints = [0] * self.num_joints  # Default joint angles
+                return
+                
             # Update Cartesian position
             ret = self.arm.get_position()
             if ret[0] == 0:
@@ -362,6 +510,10 @@ class XArmController:
     @property
     def is_alive(self):
         """Check if the robot is in a safe operating state."""
+        if self.simulation_mode:
+            # In simulation mode, always return True if initialized
+            return self.alive and self.arm is not None
+            
         if self.alive and self.arm and self.arm.connected and self.arm.error_code == 0:
             if self._ignore_exit_state:
                 return True
@@ -443,8 +595,24 @@ class XArmController:
             
         if speed is None:
             speed = self.tcp_speed
+        
+        # Set default orientation if not specified
+        if roll is None:
+            roll = 180
+        if pitch is None:
+            pitch = 0
+        if yaw is None:
+            yaw = 0
             
-        # Use current orientation if not specified
+        if self.simulation_mode:
+            # In simulation mode, use enhanced collision detection
+            if self._check_workspace_collision([x, y, z, roll, pitch, yaw]):
+                return False
+            print(f"[SIM] Moved to position [{x}, {y}, {z}, {roll}, {pitch}, {yaw}]")
+            self.last_position = [x, y, z, roll, pitch, yaw]
+            return True
+            
+        # Use current orientation if not specified (hardware mode only)
         if any(angle is None for angle in [roll, pitch, yaw]):
             current_pos = self.arm.get_position()
             if current_pos[0] == 0:  # Success
@@ -513,6 +681,14 @@ class XArmController:
             speed = self.angle_speed
         if acceleration is None:
             acceleration = self.angle_acc
+        
+        if self.simulation_mode:
+            # In simulation mode, use enhanced collision detection
+            if self._check_joint_collision(angles):
+                return False
+            print(f"[SIM] Joints moved to {angles}")
+            self.last_joints = angles[:self.num_joints]  # Store only valid joints for model
+            return True
             
         code = self.arm.set_servo_angle(
             angle=angles,
@@ -698,6 +874,10 @@ class XArmController:
     # Universal Gripper Methods
     def open_gripper(self, speed=None, wait=True):
         """Open the gripper (works with any configured gripper type)."""
+        if self.simulation_mode:
+            print(f"[SIM] {self.gripper_type.title()} gripper opened")
+            return True
+            
         if self.gripper_type == 'bio':
             return self.open_bio_gripper(speed=speed, wait=wait)
         elif self.gripper_type == 'standard':
@@ -710,6 +890,10 @@ class XArmController:
 
     def close_gripper(self, speed=None, wait=True):
         """Close the gripper (works with any configured gripper type)."""
+        if self.simulation_mode:
+            print(f"[SIM] {self.gripper_type.title()} gripper closed")
+            return True
+            
         if self.gripper_type == 'bio':
             return self.close_bio_gripper(speed=speed, wait=wait)
         elif self.gripper_type == 'standard':
@@ -751,6 +935,12 @@ class XArmController:
             return False
         if speed is None:
             speed = self.track_config.get('Speed', 200)
+        
+        if self.simulation_mode:
+            print(f"[SIM] Linear track moved to position {position}mm")
+            self.last_track_position = position
+            return True
+            
         code = self.arm.set_linear_track_pos(speed=speed, pos=position, wait=wait)
         success = self.check_code(code, f'move_track_to_position({position})')
         if success:
@@ -769,6 +959,10 @@ class XArmController:
         if not self.is_component_enabled('track'):
             print("Linear track is not enabled")
             return None
+        
+        if self.simulation_mode:
+            return getattr(self, 'last_track_position', 0)
+            
         ret = self.arm.get_linear_track_pos()
         if ret[0] == 0:
             self.last_track_position = ret[1]

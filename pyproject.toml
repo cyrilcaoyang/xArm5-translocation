@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xarm-translocation"
-version = "0.2.0"
+version = "0.2.1"
 authors = [
   { name="Yang Cao", email="cyrilcaoyang@gmail.com" },
 ]
@@ -31,7 +31,10 @@ classifiers = [
 
 dependencies = [
     "xarm-python-sdk>=1.13.0",
-    "PyYAML>=6.0"
+    "PyYAML>=6.0",
+    "fastapi>=0.104.1",
+    "uvicorn[standard]>=0.24.0",
+    "websockets>=12.0"
 ]
 
 [project.optional-dependencies]
