@@ -57,10 +57,10 @@ python users/examples/demo_docker_sim.py
 conda run -n sdl2-robots python src/xarm_api_server.py
 
 # Access API documentation
-# http://localhost:8000/docs
+# http://localhost:6001/docs
 ```
 
-## 📁 Project Structure
+## �� Project Structure
 
 ```
 xarm-translocation/
@@ -84,15 +84,7 @@ xarm-translocation/
 
 ## 📚 Documentation
 
-### **Main Guides**
-- **[SIMULATION_MODES.md](docs/SIMULATION_MODES.md)** - Complete simulation guide with three-stage testing strategy
 - **[API_REFERENCE.md](docs/API_REFERENCE.md)** - FastAPI server endpoints and usage
-- **[CONFIGURATION.md](docs/CONFIGURATION.md)** - Robot models, settings, and customization
-
-### **Quick References**
-- **[EXAMPLES.md](docs/EXAMPLES.md)** - Demo scripts and usage patterns
-- **[DOCKER_SETUP.md](docs/DOCKER_SETUP.md)** - Docker simulator installation and usage
-- **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## 🔧 Advanced Features
 
@@ -119,7 +111,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Issues**: Create GitHub issues for bugs and feature requests
 - **Documentation**: Check `docs/` directory for comprehensive guides
 - **Examples**: Run demo scripts in `users/examples/`
-- **API**: Access interactive docs at `http://localhost:8000/docs`
+- **API**: Access interactive docs at `http://localhost:6001/docs`
 
 ---
 

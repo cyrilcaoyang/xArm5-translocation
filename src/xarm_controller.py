@@ -41,6 +41,7 @@ class XArmController:
         self.xarm_config = self.load_config(os.path.join(config_path, 'xarm_config.yaml'))
         self.gripper_config = self.load_config(os.path.join(config_path, 'bio_gripper_config.yaml'))
         self.track_config = self.load_config(os.path.join(config_path, 'linear_track_config.yaml'))
+        self.location_config = self.load_config(os.path.join(config_path, 'location_config.yaml'))
         
         # Component settings
         self.gripper_type = gripper_type
@@ -933,6 +934,12 @@ class XArmController:
         if not self.is_component_enabled('track'):
             print("Linear track is not enabled")
             return False
+
+        # Validate position is within bounds
+        if not (0 <= position <= 700):
+            print(f"Error: Track position {position}mm is out of bounds (0-700mm).")
+            return False
+
         if speed is None:
             speed = self.track_config.get('Speed', 200)
         
@@ -1017,6 +1024,12 @@ class XArmController:
         if success:
             self._update_positions()
         return success
+
+    def get_named_locations(self):
+        """Returns a list of all named locations."""
+        if self.location_config and 'locations' in self.location_config:
+            return list(self.location_config['locations'].keys())
+        return []
 
     def get_system_info(self):
         """Get information about the configured system."""

@@ -17,7 +17,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -129,6 +130,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Mount static files directory
+app.mount("/web", StaticFiles(directory="src/web"), name="web")
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -158,16 +162,21 @@ async def broadcast_status_update():
     global controller
     if controller:
         try:
+            # More detailed status
+            is_connected = controller.arm.connected
+            status_info = {
+                "connection_status": "Connected to Arm" if is_connected else "Disconnected from Arm",
+                "ip_address": controller.xarm_config.get('host') if is_connected else "N/A",
+                "system_status": controller.get_system_status(),
+                "component_states": controller.get_component_states(),
+                "current_position": controller.get_current_position(),
+                "current_joints": controller.get_current_joints(),
+                "track_position": controller.get_track_position() if controller.has_track() else None,
+                "timestamp": datetime.now().isoformat()
+            }
             status = {
                 "type": "status_update",
-                "data": {
-                    "system_status": controller.get_system_status(),
-                    "component_states": controller.get_component_states(),
-                    "current_position": controller.get_current_position(),
-                    "current_joints": controller.get_current_joints(),
-                    "track_position": controller.get_track_position() if controller.has_track() else None,
-                    "timestamp": datetime.now().isoformat()
-                }
+                "data": status_info
             }
             await manager.broadcast(json.dumps(status))
         except Exception as e:
@@ -176,6 +185,11 @@ async def broadcast_status_update():
 # API Routes
 
 @app.get("/")
+async def read_root():
+    """Serve the main dashboard page."""
+    return FileResponse('src/web/index.html')
+
+@app.get("/api")
 async def root():
     """Root endpoint with API information"""
     return {
@@ -243,25 +257,38 @@ async def get_status():
     ctrl = get_controller()
     
     try:
+        is_connected = ctrl.arm.connected
         return {
+            "connection_status": "Connected to Arm" if is_connected else "Disconnected from Arm",
+            "ip_address": ctrl.xarm_config.get('host') if is_connected else "N/A",
             "system_status": ctrl.get_system_status(),
             "component_states": ctrl.get_component_states(),
             "current_position": ctrl.get_current_position(),
             "current_joints": ctrl.get_current_joints(),
-            "track_position": ctrl.get_track_position() if ctrl.has_track() else None,
-            "model": ctrl.model_name,
-            "num_joints": ctrl.num_joints,
-            "gripper_type": ctrl.gripper_type,
-            "has_track": ctrl.has_track(),
-            "has_gripper": ctrl.has_gripper(),
-            "error_history": ctrl.get_error_history(5),
-            "is_alive": ctrl.is_alive,
-            "timestamp": datetime.now().isoformat()
+            "track_position": ctrl.get_track_position() if ctrl.has_track() else None
         }
     except Exception as e:
-        logger.error(f"Error getting status: {e}")
+        logger.error(f"Get status failed: {e}")
         raise HTTPException(status_code=500, detail=f"Error getting status: {str(e)}")
 
+@app.get("/locations")
+async def get_locations():
+    """Get all named locations from config"""
+    try:
+        # Create a temporary controller just to read locations
+        from xarm_controller import XArmController
+        temp_controller = XArmController(
+            config_path='users/settings/', 
+            simulation_mode=True, 
+            auto_enable=False
+        )
+        locations = temp_controller.get_named_locations()
+        return {"locations": locations}
+    except Exception as e:
+        logger.error(f"Get locations failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Get locations failed: {str(e)}")
+
+# Movement endpoints
 @app.post("/move/position")
 async def move_to_position(request: PositionRequest, background_tasks: BackgroundTasks):
     """Move robot to specified Cartesian position"""
@@ -574,7 +601,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "xarm_api_server:app",
         host="0.0.0.0",
-        port=8000,
+        port=6001,
         reload=True,
         log_level="info"
     ) 

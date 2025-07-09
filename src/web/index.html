@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xArm Control Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>xArm Control Dashboard</h1>
+    <div id="status-container">
+        <div class="status-left">
+            <strong>Status:</strong> <span id="robot-status">Disconnected</span>
+            <br>
+            <strong>IP:</strong> <span id="robot-ip">N/A</span>
+        </div>
+        <div class="status-right">
+            <div id="realtime-data">
+                <div class="data-item"><strong>Joints:</strong> <span id="robot-joints">[0, 0, 0, 0, 0, 0]</span></div>
+                <div class="data-item"><strong>Position:</strong> <span id="robot-position">[x, y, z, r, p, y]</span></div>
+                <div class="data-item"><strong>Track:</strong> <span id="track-position">N/A</span></div>
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <!-- Connection -->
+        <div class="control-box">
+            <h2>System</h2>
+            <button id="connect-btn">Connect</button>
+            <button id="disconnect-btn">Disconnect</button>
+        </div>
+
+        <!-- Move Position -->
+        <div class="control-box">
+            <h2>Move to Position</h2>
+            <div class="input-grid">
+                <input type="number" id="pos-x" placeholder="X">
+                <input type="number" id="pos-y" placeholder="Y">
+                <input type="number" id="pos-z" placeholder="Z">
+                <input type="number" id="pos-roll" placeholder="Roll">
+                <input type="number" id="pos-pitch" placeholder="Pitch">
+                <input type="number" id="pos-yaw" placeholder="Yaw">
+            </div>
+            <input type="number" id="pos-speed" placeholder="Speed (mm/s)" min="1" max="1000">
+            <button id="move-pos-btn">Move</button>
+        </div>
+
+        <!-- Move Joints -->
+        <div class="control-box">
+            <h2>Move Joints</h2>
+            <div class="input-grid">
+                <input type="number" id="j1" placeholder="J1">
+                <input type="number" id="j2" placeholder="J2">
+                <input type="number" id="j3" placeholder="J3">
+                <input type="number" id="j4" placeholder="J4">
+                <input type="number" id="j5" placeholder="J5">
+                <input type="number" id="j6" placeholder="J6">
+            </div>
+            <input type="number" id="joints-speed" placeholder="Speed (°/s)" min="1" max="180">
+            <button id="move-joints-btn">Move</button>
+        </div>
+
+        <!-- Move Location -->
+        <div class="control-box">
+            <h2>Move to Location</h2>
+            <select id="location-select">
+                <option value="">-- Select Location --</option>
+            </select>
+            <input type="number" id="location-speed" placeholder="Speed (mm/s)" min="1" max="1000">
+            <button id="move-loc-btn">Move</button>
+        </div>
+
+        <!-- Home and Stop -->
+        <div class="control-box">
+            <h2>General</h2>
+            <button id="home-btn">Go Home</button>
+            <button id="stop-btn" class="danger">STOP</button>
+        </div>
+
+        <!-- Gripper -->
+        <div class="control-box">
+            <h2>Gripper</h2>
+            <input type="number" id="gripper-speed" placeholder="Speed" min="1" max="5000">
+            <button id="gripper-open-btn">Open Gripper</button>
+            <button id="gripper-close-btn">Close Gripper</button>
+        </div>
+
+        <!-- Linear Track -->
+        <div class="control-box">
+            <h2>Linear Track (0-700mm)</h2>
+            <input type="number" id="track-pos" placeholder="Track Position" min="0" max="700">
+            <input type="number" id="track-speed" placeholder="Speed (mm/s)" min="1" max="1000">
+            <button id="track-move-btn">Move Track</button>
+            <button id="track-get-btn">Get Position</button>
+        </div>
+    </div>
+    <div id="response-container">
+        <h3>API Response</h3>
+        <pre id="api-response">No request sent yet.</pre>
+    </div>
+    <script src="main.js"></script>
+</body>
+</html> 
