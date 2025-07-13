@@ -53,7 +53,7 @@ The project provides multiple simulation approaches for different development ne
 
 ```bash
 # Run enhanced software simulation demo
-python users/examples/demo_software_sim.py
+python src/examples/demo_software_sim.py
 ```
 
 ### Code Integration
@@ -63,7 +63,7 @@ from xarm_controller import XArmController
 
 # Enable enhanced software simulation
 controller = XArmController(
-    config_path='users/settings/',
+    config_path='src/settings/',
     model=7,
     simulation_mode=True  # Enhanced collision detection
 )
@@ -153,16 +153,16 @@ controller.move_joints([95, 0, 50, 0, 0, 0, 0])  # May be blocked by collision d
 
 ```bash
 # One-time setup
-users/docker_setup.sh setup
+src/docker/docker_setup.sh setup
 
 # Start simulator (xArm7 example)
-users/docker_setup.sh start 7
+src/docker/docker_setup.sh start 7
 
 # Run demo
-python users/examples/demo_docker_sim.py
+python src/examples/demo_docker_sim.py
 
 # Stop simulator
-users/docker_setup.sh stop
+src/docker/docker_setup.sh stop
 ```
 
 ### Code Integration
@@ -172,7 +172,7 @@ from xarm_controller import XArmController
 
 # Connect to Docker simulator
 controller = XArmController(
-    config_path='users/settings/',
+    config_path='src/settings/',
     model=7  # Must match Docker simulator model
 )
 # Uses 127.0.0.1 from config automatically
@@ -256,7 +256,7 @@ A professional testing methodology progressing from safe software simulation to 
 def test_algorithm_logic():
     """Test core algorithm without hardware risks"""
     controller = XArmController(
-        config_path='users/settings/',
+        config_path='src/settings/',
         model=7,
         simulation_mode=True  # Enhanced collision detection
     )
@@ -308,10 +308,10 @@ def test_algorithm_logic():
 def test_physics_validation():
     """Test with official UFactory Studio physics"""
     # Start Docker simulator first
-    # users/docker_setup.sh start 7
+    # src/docker/docker_setup.sh start 7
     
     controller = XArmController(
-        config_path='users/settings/',
+        config_path='src/settings/',
         model=7  # Must match Docker simulator
     )
     
@@ -362,7 +362,7 @@ def test_physics_validation():
 def test_hardware_integration():
     """Test with actual robot hardware"""
     controller = XArmController(
-        config_path='users/settings/',
+        config_path='src/settings/',
         model=7  # Real robot configuration
     )
     
@@ -399,7 +399,7 @@ def test_hardware_integration():
 #### Phase 1: Development (Software Simulation)
 ```bash
 # Quick development cycle
-python users/examples/demo_software_sim.py
+python src/examples/demo_software_sim.py
 
 # Run your algorithm tests
 python your_algorithm_test.py --simulation
@@ -415,7 +415,7 @@ python your_algorithm_test.py --simulation
 #### Phase 2: Validation (Docker Simulation)
 ```bash
 # Start UFactory Studio simulator
-users/docker_setup.sh start 7
+src/docker/docker_setup.sh start 7
 
 # Run physics validation tests
 python your_algorithm_test.py --docker-sim
@@ -455,7 +455,7 @@ Both simulation modes work seamlessly with the FastAPI server:
 # Software simulation via API
 POST /connect
 {
-    "config_path": "users/settings/",
+    "config_path": "src/settings/",
     "model": 7,
     "simulation_mode": true
 }
@@ -463,7 +463,7 @@ POST /connect
 # Docker simulation via API
 POST /connect
 {
-    "config_path": "users/settings/",
+    "config_path": "src/settings/",
     "model": 7
 }
 # Uses 127.0.0.1 from config automatically
@@ -578,22 +578,22 @@ By following this methodology, you can develop robust, safe, and reliable robot 
 ### Quick Start - Software Simulation
 ```bash
 # Immediate testing (no setup required)
-python users/examples/demo_software_sim.py
+python src/examples/demo_software_sim.py
 ```
 
 ### Quick Start - Docker Simulation
 ```bash
 # One-time setup
-users/docker_setup.sh setup
+src/docker/docker_setup.sh setup
 
 # Start simulator
-users/docker_setup.sh start 7
+src/docker/docker_setup.sh start 7
 
 # Run demo
-python users/examples/demo_docker_sim.py
+python src/examples/demo_docker_sim.py
 
 # Stop simulator
-users/docker_setup.sh stop
+src/docker/docker_setup.sh stop
 ```
 
 ### Quick Start - API Server

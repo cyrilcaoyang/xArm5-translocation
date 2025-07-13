@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xarm-translocation"
-version = "0.2.1"
+version = "0.2.5"
 authors = [
   { name="Yang Cao", email="cyrilcaoyang@gmail.com" },
 ]
@@ -38,22 +38,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = [
-    "pytest>=7.0",
-    "pytest-mock>=3.0",
-    "pytest-cov>=4.0",
-    "pytest-docker>=2.0"
-]
 dev = [
     "pytest>=7.0",
-    "pytest-mock>=3.0", 
+    "pytest-mock>=3.0",
     "pytest-cov>=4.0",
     "pytest-docker>=2.0",
     "black>=22.0",
     "isort>=5.0",
-    "flake8>=4.0"
-]
-docker = [
+    "flake8>=4.0",
     "docker>=6.0"
 ]
 
@@ -64,13 +56,13 @@ Repository = "https://github.com/cyrilcao/xArm5-translocation.git"
 Issues = "https://github.com/cyrilcao/xArm5-translocation/issues"
 
 # [project.scripts]
-# Note: Docker setup uses bash script at users/docker/docker_setup.sh
+# Note: Docker setup uses bash script at src/docker/docker_setup.sh
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"*" = ["*.yaml", "*.yml", "*.md"]
+"*" = ["*.yaml", "*.yml", "*.md", "*.html", "*.css", "*.js"]
 
 [tool.black]
 line-length = 88
@@ -97,7 +89,7 @@ line_length = 88
 known_first_party = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["test"]
+testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*" 
 python_functions = "test_*"
@@ -107,4 +99,10 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "docker: marks tests that require Docker (deselect with '-m \"not docker\"')"
 ]
+
+[tool.readme]
+# Note: Docker setup uses bash script at src/docker/docker_setup.sh
+# For full setup, see README_DOCKER.md
+
+[tool.coverage.run]
 

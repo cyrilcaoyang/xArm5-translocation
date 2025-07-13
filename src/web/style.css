@@ -62,6 +62,22 @@ h1 {
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
+.bounds-info {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 15px;
+    border-left: 4px solid #007bff;
+}
+
+.bounds-info small {
+    color: #495057;
+    font-size: 0.85em;
+    line-height: 1.4;
+    display: block;
+}
+
 .input-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -75,6 +91,20 @@ input[type="text"], input[type="number"] {
     border: 1px solid #ccc;
     border-radius: 4px;
     box-sizing: border-box;
+    font-size: 14px;
+}
+
+input[type="number"]:disabled {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    border-color: #e9ecef;
+    cursor: not-allowed;
+}
+
+input[type="number"]:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
 }
 
 select {
@@ -109,6 +139,16 @@ button.danger {
 
 button.danger:hover {
     background-color: #a71d2a;
+}
+
+button.warning {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+button.warning:hover {
+    background-color: #e0a800;
+    color: #212529;
 }
 
 #response-container {

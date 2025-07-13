@@ -38,7 +38,7 @@ Connects to the robot and initializes the controller.
 
 ```json
 {
-  "config_path": "users/settings/",
+  "config_path": "src/settings/",
   "gripper_type": "bio",
   "enable_track": true,
   "auto_enable": true,

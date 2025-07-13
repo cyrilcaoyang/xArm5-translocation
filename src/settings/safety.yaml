@@ -1,0 +1,51 @@
+# Safety configurations for the xArm Controller
+workspace_limits:
+  x: [-700, 700]
+  y: [-700, 700]
+  z: [-200, 700]
+  roll: [-180, 180]
+  pitch: [-180, 180]
+  yaw: [-180, 180]
+
+joint_limits:
+  5: 
+    - [-360, 360]
+    - [-118, 120]
+    - [-225, 11]
+    - [-180, 180]
+    - [-180, 180]
+  6: 
+    - [-360, 360]
+    - [-118, 120]
+    - [-225, 11]
+    - [-180, 180]
+    - [-180, 180]
+    - [-360, 360]
+  7: 
+    - [-360, 360]
+    - [-118, 120]
+    - [-225, 11]
+    - [-180, 180]
+    - [-180, 180]
+    - [-360, 360]
+    - [-180, 180]
+
+collision_zones:
+  - name: 'table'
+    bounds:
+      x: [-400, 400]
+      y: [-400, 400]
+      z: [-50, 0]
+  - name: 'base'
+    bounds:
+      x: [-150, 150]
+      y: [-150, 150]
+      z: [0, 100]
+
+max_tcp_speed: 1000
+max_joint_speed: 180
+collision_sensitivity: 3
+
+temperature_limits:
+  warning: 60
+  critical: 75 

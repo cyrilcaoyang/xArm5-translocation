@@ -21,10 +21,10 @@ import sys
 import time
 import os
 
-# Add the src directory to the Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Add src directory to Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.xarm_controller import XArmController
+from core.xarm_controller import XArmController
 
 
 if __name__ == "__main__":

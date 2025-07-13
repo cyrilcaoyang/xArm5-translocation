@@ -43,13 +43,15 @@ if controller.initialize():
 
 ### Simulation Modes
 ```bash
-# Software simulation (instant, collision detection)
-python users/examples/demo_software_sim.py
+# Run software simulation
+python src/examples/demo_software_sim.py
 
-# Docker simulation (3D physics, visual)
-users/docker_setup.sh start 7
-python users/examples/demo_docker_sim.py
+# Run Docker simulation (after starting container)
+src/docker/docker_setup.sh start 7
+python src/examples/demo_docker_sim.py
 ```
+
+For detailed instructions on simulation and hardware setup, see the [Simulation README](src/settings/README_SIMULATION.md).
 
 ### API Server
 ```bash
@@ -60,22 +62,6 @@ conda run -n sdl2-robots python src/xarm_api_server.py
 # http://localhost:6001/docs
 ```
 
-## �� Project Structure
-
-```
-xarm-translocation/
-├── src/
-│   ├── xarm_controller.py          # Main unified controller
-│   └── xarm_api_server.py          # FastAPI REST server
-├── users/
-│   ├── examples/                   # Demo scripts
-│   │   ├── demo_software_sim.py    # Software simulation
-│   │   └── demo_docker_sim.py      # Docker simulation
-│   ├── settings/                   # Configuration files
-│   └── docker_setup.sh             # Docker simulator setup
-└── docs/                          # Comprehensive documentation
-```
-
 ## 🎯 Three-Stage Testing Strategy
 
 1. **Software Simulation** → Logic validation, error handling, collision detection
@@ -84,7 +70,13 @@ xarm-translocation/
 
 ## 📚 Documentation
 
-- **[API_REFERENCE.md](docs/API_REFERENCE.md)** - FastAPI server endpoints and usage
+For detailed guides on specific topics, please see the `docs/` directory:
+
+-   **[API Reference](./docs/API_REFERENCE.md)**: Detailed documentation of the `XArmController` methods and parameters.
+-   **[Docker Testing Guide](./docs/TESTING_WITH_DOCKER.md)**: Comprehensive guide for testing with the UFACTORY simulator using Docker (local or remote).
+-   **[Simulation Guide](./docs/README_SIMULATION.md)**: A guide to the software-only simulation mode.
+-   **[Features Overview](./docs/XARM_FEATURES.md)**: A high-level overview of the controller's features.
+-   **[Testing Guide](./docs/TESTING.md)**: An overview of the project's testing strategy.
 
 ## 🔧 Advanced Features
 
@@ -93,6 +85,9 @@ xarm-translocation/
 - **Real-time monitoring**: WebSocket updates and status tracking
 - **Error handling**: Comprehensive error history and recovery
 - **Remote deployment**: Docker containers on web servers
+- **Configuration**: All settings are now in `src/settings/`. Modify the `.yaml` files to match your hardware.
+- **Examples**: Run demo scripts in `src/examples/` to see different functionalities.
+- **API Server**: Start the web server with `uvicorn src.xarm_api_server:app --reload`.
 
 ## 🤝 Contributing
 
@@ -110,7 +105,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Issues**: Create GitHub issues for bugs and feature requests
 - **Documentation**: Check `docs/` directory for comprehensive guides
-- **Examples**: Run demo scripts in `users/examples/`
+- **Examples**: Run demo scripts in `src/examples/`
 - **API**: Access interactive docs at `http://localhost:6001/docs`
 
 ---

@@ -5,8 +5,10 @@ Tests for XArmController class.
 import pytest
 import time
 from unittest.mock import Mock, patch, MagicMock
+import sys
+import os
 
-from xarm_controller import XArmController, ComponentState
+from src.core.xarm_controller import XArmController, ComponentState
 
 
 class TestXArmControllerInitialization:
@@ -76,7 +78,7 @@ class TestXArmControllerConnection:
             mock_xarm_api.connected = True
             return mock_xarm_api
         
-        monkeypatch.setattr('xarm_controller.XArmAPI', mock_constructor)
+        monkeypatch.setattr('src.core.xarm_controller.XArmAPI', mock_constructor)
         
         success = controller_no_auto_enable.initialize()
         
@@ -92,7 +94,7 @@ class TestXArmControllerConnection:
             mock_xarm_api.connected = False
             return mock_xarm_api
         
-        monkeypatch.setattr('xarm_controller.XArmAPI', mock_constructor)
+        monkeypatch.setattr('src.core.xarm_controller.XArmAPI', mock_constructor)
         
         success = controller_no_auto_enable.initialize()
         
@@ -275,12 +277,12 @@ class TestGripperControl:
         controller.enable_gripper_component()
         
         # Test open
-        success = controller.open_bio_gripper()
+        success = controller.open_gripper()
         assert success is True
         controller.arm.open_bio_gripper.assert_called()
         
         # Test close
-        success = controller.close_bio_gripper()
+        success = controller.close_gripper()
         assert success is True
         controller.arm.close_bio_gripper.assert_called()
     
@@ -504,9 +506,11 @@ class TestUtilityMethods:
     
     def test_pprint_method(self):
         """Test pretty print method."""
-        # This is a static method, so we can test it directly
+        # Import the pprint function from utilities
+        from src.core.xarm_utils import pprint
+        
         with patch('builtins.print') as mock_print:
-            XArmController.pprint("Test message")
+            pprint("Test message")
             mock_print.assert_called()
     
     def test_has_gripper(self, test_config_path):

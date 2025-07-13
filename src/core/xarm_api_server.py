@@ -22,7 +22,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
 
-from xarm_controller import XArmController
+from .xarm_controller import XArmController
+from .xarm_controller import ComponentState
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -57,7 +58,7 @@ manager = ConnectionManager()
 
 # Pydantic models for request/response
 class ConnectionRequest(BaseModel):
-    config_path: str = Field(default='users/settings/', description="Path to configuration files")
+    config_path: str = Field(default='src/settings/', description="Path to configuration files")
     gripper_type: str = Field(default='bio', description="Type of gripper: bio, standard, robotiq, or none")
     enable_track: bool = Field(default=True, description="Enable linear track functionality")
     auto_enable: bool = Field(default=True, description="Auto-enable components during initialization")
@@ -70,13 +71,13 @@ class PositionRequest(BaseModel):
     roll: Optional[float] = Field(default=None, description="Roll angle")
     pitch: Optional[float] = Field(default=None, description="Pitch angle")
     yaw: Optional[float] = Field(default=None, description="Yaw angle")
-    speed: Optional[float] = Field(default=None, description="Movement speed")
+    speed: Optional[float] = Field(default=None, ge=1, le=1000, description="Movement speed (1-1000 mm/s)")
     wait: bool = Field(default=True, description="Wait for movement completion")
 
 class JointRequest(BaseModel):
     angles: List[float] = Field(description="Joint angles in degrees")
-    speed: Optional[float] = Field(default=None, description="Movement speed")
-    acceleration: Optional[float] = Field(default=None, description="Movement acceleration")
+    speed: Optional[float] = Field(default=None, ge=1, le=180, description="Movement speed (1-180 °/s)")
+    acceleration: Optional[float] = Field(default=None, ge=1, le=1000, description="Movement acceleration (1-1000 °/s²)")
     wait: bool = Field(default=True, description="Wait for movement completion")
 
 class RelativeRequest(BaseModel):
@@ -86,19 +87,19 @@ class RelativeRequest(BaseModel):
     droll: float = Field(default=0, description="Delta roll")
     dpitch: float = Field(default=0, description="Delta pitch")
     dyaw: float = Field(default=0, description="Delta yaw")
-    speed: Optional[float] = Field(default=None, description="Movement speed")
+    speed: Optional[float] = Field(default=None, ge=1, le=1000, description="Movement speed (1-1000 mm/s)")
 
 class LocationRequest(BaseModel):
     location_name: str = Field(description="Named location from config")
-    speed: Optional[float] = Field(default=None, description="Movement speed")
+    speed: Optional[float] = Field(default=None, ge=1, description="Movement speed (1-1000 mm/s for Cartesian, 1-180 °/s for Joints)")
 
 class TrackRequest(BaseModel):
-    position: float = Field(description="Linear track position")
-    speed: Optional[float] = Field(default=None, description="Movement speed")
+    position: float = Field(ge=0, le=700, description="Linear track position (0-700 mm)")
+    speed: Optional[float] = Field(default=None, ge=1, le=1000, description="Movement speed (1-1000 mm/s)")
     wait: bool = Field(default=True, description="Wait for movement completion")
 
 class GripperRequest(BaseModel):
-    speed: Optional[float] = Field(default=None, description="Gripper speed")
+    speed: Optional[float] = Field(default=None, ge=1, le=5000, description="Gripper speed (1-5000)")
     wait: bool = Field(default=True, description="Wait for operation completion")
 
 class VelocityRequest(BaseModel):
@@ -276,9 +277,9 @@ async def get_locations():
     """Get all named locations from config"""
     try:
         # Create a temporary controller just to read locations
-        from xarm_controller import XArmController
+        from .xarm_controller import XArmController
         temp_controller = XArmController(
-            config_path='users/settings/', 
+            config_path='src/settings/', 
             simulation_mode=True, 
             auto_enable=False
         )
@@ -448,6 +449,27 @@ async def stop_movement(background_tasks: BackgroundTasks):
     except Exception as e:
         logger.error(f"Stop movement failed: {e}")
         raise HTTPException(status_code=500, detail=f"Stop movement failed: {str(e)}")
+
+@app.post("/clear/errors")
+async def clear_errors(background_tasks: BackgroundTasks):
+    """Clear all robot errors and warnings"""
+    ctrl = get_controller()
+    
+    try:
+        result = ctrl.clear_errors()
+        
+        if result:
+            background_tasks.add_task(broadcast_status_update)
+            return {
+                "message": "All errors and warnings cleared successfully",
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to clear all errors")
+            
+    except Exception as e:
+        logger.error(f"Clear errors failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Clear errors failed: {str(e)}")
 
 @app.post("/velocity/cartesian")
 async def set_cartesian_velocity(request: VelocityRequest):

@@ -35,10 +35,10 @@ import time
 import os
 import argparse
 
-# Add the project root directory to the Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+# Add src directory to Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.xarm_controller import XArmController
+from core.xarm_controller import XArmController
 
 
 def demonstrate_gripper_cycle(controller, position, simulate=False):
@@ -116,9 +116,17 @@ def run_linear_motor_demo(controller, target_positions, simulate_mode=False):
                 print(f"    ✓ Linear motor moved to {position}mm")
                 
                 # Verify position
-                current_pos = controller.get_track_position()
+                pos_ret = controller.get_track_position()
+                current_pos = None
+                if isinstance(pos_ret, list) and len(pos_ret) > 1 and isinstance(pos_ret[1], (int, float)):
+                    current_pos = pos_ret[1]
+                elif isinstance(pos_ret, (int, float)):
+                    current_pos = pos_ret
+
                 if current_pos is not None:
                     print(f"    📍 Confirmed position: {current_pos}mm")
+                    if abs(current_pos - position) > 10:
+                        print(f"    ⚠️  Warning: Position discrepancy > 10mm (is: {current_pos}, expected: {position})")
                 
                 # Perform gripper operations
                 if controller.has_gripper() and controller.is_component_enabled('gripper'):
@@ -142,6 +150,15 @@ def run_linear_motor_demo(controller, target_positions, simulate_mode=False):
     else:
         if controller.reset_track():
             print("    ✓ Linear motor returned to home (0mm)")
+            pos_ret = controller.get_track_position()
+            current_pos = None
+            if isinstance(pos_ret, list) and len(pos_ret) > 1 and isinstance(pos_ret[1], (int, float)):
+                current_pos = pos_ret[1]
+            elif isinstance(pos_ret, (int, float)):
+                current_pos = pos_ret
+
+            if current_pos is not None and abs(current_pos) > 10:
+                print(f"    ⚠️  Warning: Home position discrepancy > 10mm (is: {current_pos})")
         else:
             print("    ✗ Failed to return to home position")
 

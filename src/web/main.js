@@ -98,7 +98,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Event Listeners ---
     document.getElementById('connect-btn').addEventListener('click', () => {
-        sendRequest('/connect').then(populateLocations);
+        const connectionData = {
+            config_path: 'src/settings/',
+            gripper_type: 'bio',
+            enable_track: true,
+            auto_enable: true,
+            model: 5
+        };
+        sendRequest('/connect', 'POST', connectionData).then(populateLocations);
     });
     document.getElementById('disconnect-btn').addEventListener('click', () => {
         sendRequest('/disconnect');
@@ -107,6 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('home-btn').addEventListener('click', () => sendRequest('/move/home'));
     document.getElementById('stop-btn').addEventListener('click', () => sendRequest('/move/stop'));
+    document.getElementById('clear-errors-btn').addEventListener('click', () => sendRequest('/clear/errors'));
     document.getElementById('gripper-open-btn').addEventListener('click', () => {
         const body = {};
         const speed = getInputValue('gripper-speed');

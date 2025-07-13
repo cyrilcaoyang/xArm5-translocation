@@ -7,10 +7,10 @@ import sys
 import os
 from unittest.mock import Mock, MagicMock
 
-# Add src to Python path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# Add src to path to allow imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from xarm_controller import XArmController, ComponentState
+from core.xarm_controller import XArmController, ComponentState
 
 
 @pytest.fixture
@@ -146,7 +146,7 @@ def initialized_controller(controller_no_auto_enable, mock_xarm_api, monkeypatch
         mock_xarm_api.connected = True
         return mock_xarm_api
     
-    monkeypatch.setattr('xarm_controller.XArmAPI', mock_xarm_api_constructor)
+    monkeypatch.setattr('core.xarm_controller.XArmAPI', mock_xarm_api_constructor)
     
     # Initialize the controller
     success = controller_no_auto_enable.initialize()

@@ -37,16 +37,10 @@ import os
 import math
 import time
 
-# Add the parent directory to the path so we can import our modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
+# Add src directory to Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-try:
-    from xarm_controller import XArmController
-except ImportError as e:
-    print(f"Error importing XArmController: {e}")
-    print("Make sure you're running this from the project root directory")
-    sys.exit(1)
+from core.xarm_controller import XArmController
 
 def demo_basic_simulation():
     """Demonstrate basic simulation mode functionality."""
@@ -54,13 +48,12 @@ def demo_basic_simulation():
     print("BASIC SIMULATION MODE DEMO")
     print("=" * 60)
     
-    # Initialize controller in simulation mode
+    # Initialize the controller in simulation mode
     controller = XArmController(
-        config_path='users/settings/',
-        model=7,
+        config_path='src/settings/',
         simulation_mode=True,
-        gripper_type='bio',
-        enable_track=True
+        model=7,
+        auto_enable=True
     )
     
     print(f"✓ Controller initialized in simulation mode")
