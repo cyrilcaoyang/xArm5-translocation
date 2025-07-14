@@ -1,335 +1,433 @@
-# xArm Translocation API Documentation
+# API Reference
 
-This document provides instructions on how to use the REST API for controlling the xArm robot.
+This document provides a detailed reference for the xArm-translocation project's RESTful API. 
 
-## Running the API Server
+The API allows for comprehensive control over the xArm robot, its components, and the simulation environment.
 
-### 1. Installation
-
-The API server requires Python 3 and several packages. You can install the dependencies using pip:
+Start the server by runing xarm_api_server.py as a module at the project root folder.
 
 ```bash
-pip install fastapi "uvicorn[standard]" websockets
+python -m src.core.xarm_api_server
 ```
 
-### 2. Starting the Server
-
-To start the API server, run the following command from the root of the project directory:
-
-```bash
-python src/xarm_api_server.py
-```
-
-The server will start on `http://0.0.0.0:6001`.
-
-## API Endpoints
-
-The API provides several endpoints to control the robot.
+The API server runs on `http://127.0.0.1:6001` by default.
 
 ---
 
-### System
+## Table of Contents
 
-#### `POST /connect`
+- [Server & Connection](#server--connection-management)
+- [Robot Arm Movement](#robot-arm-movement)
+- [Components](#components)
+  - [Gripper](#gripper)
+  - [Linear Track](#linear-track)
+- [System & Safety](#system--safety)
+- [WebSocket Interface](#websocket-interface)
 
-Connects to the robot and initializes the controller.
+---
 
-**Request Body:**
+## Server & Connection Management
+
+These endpoints manage the connection to the robot (real or simulated) and provide status information.
+
+### `GET /api/configurations`
+
+Retrieves a list of available connection configuration files from the `src/settings/` directory. These can be used with the `/connect` endpoint.
+
+**Response `200 OK`**
+
+```json
+[
+  "xarm5_docker_local.yaml",
+  "xarm5_docker_server.yaml",
+  "xarm5_config.yaml"
+]
+```
+
+**Example**
+
+```bash
+curl -X GET "http://127.0.0.1:6001/api/configurations"
+```
+
+### `POST /connect`
+
+Initializes the connection to the xArm controller. This is the first command that must be sent to interact with the robot. The connection can be configured in several ways.
+
+**Request Body**
 
 ```json
 {
-  "config_path": "src/settings/",
-  "gripper_type": "bio",
-  "enable_track": true,
-  "auto_enable": true,
-  "model": null
+  "host": "string",
+  "model": "integer",
+  "config_name": "string",
+  "simulation_mode": "boolean",
+  "safety_level": "string"
 }
 ```
 
-**Example:**
+*   `host` (optional): IP address of the robot or simulator.
+*   `model` (optional): The xArm model number (e.g., 5, 6, 7).
+*   `config_name` (optional): The name of a configuration file (e.g., `"xarm5_docker_local.yaml"`) to load settings from.
+*   `simulation_mode` (optional, default: `false`): Set to `true` to use the built-in software simulator without any hardware or Docker.
+*   `safety_level` (optional, default: `"medium"`): Sets the initial safety level. Options are `"low"`, `"medium"`, `"high"`.
 
-```bash
-curl -X POST http://127.0.0.1:6001/connect -H "Content-Type: application/json" -d '{}'
-```
-
----
-
-#### `POST /disconnect`
-
-Disconnects from the robot.
-
-**Example:**
-
-```bash
-curl -X POST http://127.0.0.1:6001/disconnect
-```
-
----
-
-#### `GET /status`
-
-Retrieves the current status of the robot.
-
-**Example:**
-
-```bash
-curl http://127.0.0.1:6001/status
-```
-
----
-
-### Movement
-
-#### `POST /move/position`
-
-Moves the robot to a specific Cartesian position.
-
-**Request Body:**
+**Response `200 OK`**
 
 ```json
 {
-  "x": 200,
-  "y": 0,
-  "z": 150,
-  "roll": 180,
-  "pitch": 0,
-  "yaw": 0,
-  "speed": 100,
-  "wait": true
+  "status": "success",
+  "message": "Controller initialized successfully for xArm6 at 127.0.0.1"
 }
 ```
 
-**Example:**
+**Examples**
 
-```bash
-curl -X POST http://127.0.0.1:6001/move/position -H "Content-Type: application/json" -d '{"x": 200, "y": 0, "z": 150}'
-```
+1.  **Connect using a configuration file:**
+    ```bash
+    curl -X POST "http://127.0.0.1:6001/connect" -H "Content-Type: application/json" -d '{
+      "config_name": "xarm5_docker_local.yaml"
+    }'
+    ```
 
----
+2.  **Connect to a remote Docker simulator:**
+    ```bash
+    curl -X POST "http://127.0.0.1:6001/connect" -H "Content-Type: application/json" -d '{
+      "host": "100.64.254.50",
+      "model": 6
+    }'
+    ```
 
-#### `POST /move/joints`
+3.  **Connect using the built-in software simulation:**
+    ```bash
+    curl -X POST "http://127.0.0.1:6001/connect" -H "Content-Type: application/json" -d '{
+      "model": 7,
+      "simulation_mode": true
+    }'
+    ```
 
-Moves the robot to a specific joint configuration.
+### `POST /disconnect`
 
-**Request Body:**
+Disconnects from the robot and shuts down the controller gracefully.
 
+**Response `200 OK`**
 ```json
 {
-  "angles": [0, 0, 0, 0, 0, 0],
-  "speed": 50,
-  "wait": true
+  "status": "success",
+  "message": "Disconnected from the robot."
 }
 ```
 
-**Example:**
-
+**Example**
 ```bash
-curl -X POST http://127.0.0.1:6001/move/joints -H "Content-Type: application/json" -d '{"angles": [30, 30, 0, 0, 0, 0]}'
+curl -X POST "http://127.0.0.1:6001/disconnect"
 ```
 
----
+### `GET /status`
 
-#### `POST /move/relative`
+Retrieves the current status of the robot and controller.
 
-Moves the robot relative to its current position.
-
-**Request Body:**
-
+**Response `200 OK`**
 ```json
 {
-  "dx": 10,
-  "dy": 10,
-  "dz": 0,
-  "droll": 0,
-  "dpitch": 0,
-  "dyaw": 0,
-  "speed": 100
+    "connected": true,
+    "running": true,
+    "error_code": 0,
+    "safety_level": "medium",
+    "model": 6,
+    "components": {
+        "gripper": { "connected": true, "enabled": true },
+        "linear_track": { "connected": false, "enabled": false }
+    }
 }
 ```
 
-**Example:**
-
+**Example**
 ```bash
-curl -X POST http://127.0.0.1:6001/move/relative -H "Content-Type: application/json" -d '{"dx": 20}'
+curl -X GET "http://127.0.0.1:6001/status"
 ```
 
 ---
+## Robot Arm Movement
 
-#### `POST /move/location`
+Endpoints for controlling the physical movement of the xArm.
 
-Moves the robot to a pre-configured named location.
+### `POST /move/cartesian`
 
-**Request Body:**
+Moves the robot's end-effector to a specific Cartesian position (X, Y, Z) and orientation (roll, pitch, yaw).
 
+**Request Body**
 ```json
 {
-  "location_name": "home_safe",
-  "speed": 100
+    "x": "number",
+    "y": "number",
+    "z": "number",
+    "roll": "number",
+    "pitch": "number",
+    "yaw": "number",
+    "speed": "integer",
+    "mvacc": "integer"
 }
 ```
+*   `speed` (optional, default: 100 mm/s)
+*   `mvacc` (optional, default: 1000 mm/s²)
 
----
-
-#### `POST /move/home`
-
-Moves the robot to its home position.
-
-**Example:**
-
-```bash
-curl -X POST http://127.0.0.1:6001/move/home
+**Response `200 OK`**
+```json
+{ "status": "success", "message": "Move command sent" }
 ```
 
----
-
-#### `POST /move/stop`
-
-Stops all robot movement immediately.
-
-**Example:**
-
+**Example**
 ```bash
-curl -X POST http://127.0.0.1:6001/move/stop
+curl -X POST "http://127.0.0.1:6001/move/cartesian" -H "Content-Type: application/json" -d '{
+    "x": 300, "y": 0, "z": 250, "roll": 180, "pitch": 0, "yaw": 0
+}'
 ```
 
----
+### `POST /move/joints`
 
-### Velocity Control
+Moves the robot to a specific pose by setting the angle for each joint.
 
-#### `POST /velocity/cartesian`
-
-Sets a continuous Cartesian velocity for the robot's end-effector.
-
-**Request Body:**
-
+**Request Body**
 ```json
 {
-  "vx": 10,
-  "vy": 0,
-  "vz": 0,
-  "vroll": 0,
-  "vpitch": 0,
-  "vyaw": 0
+    "j1": "number",
+    "j2": "number",
+    "j3": "number",
+    "j4": "number",
+    "j5": "number",
+    "j6": "number",
+    "j7": "number",
+    "speed": "integer",
+    "mvacc": "integer"
+}
+```
+*   Provide angles for the joints available on your model (e.g., `j1` to `j5` for xArm5).
+*   `speed` (optional, default: 20 deg/s)
+*   `mvacc` (optional, default: 200 deg/s²)
+
+**Response `200 OK`**
+```json
+{ "status": "success", "message": "Move command sent" }
+```
+
+**Example**
+```bash
+curl -X POST "http://127.0.0.1:6001/move/joints" -H "Content-Type: application/json" -d '{
+    "j1": 45, "j2": -30, "j3": 0, "j4": 0, "j5": 30, "j6": 0
+}'
+```
+
+### `GET /position/cartesian`
+
+Retrieves the current Cartesian position and orientation of the end-effector.
+
+**Response `200 OK`**
+```json
+{
+    "x": 300.1, "y": 0.5, "z": 250.2, "roll": 179.9, "pitch": 0.1, "yaw": -0.2
 }
 ```
 
-**Example:**
-
+**Example**
 ```bash
-curl -X POST http://127.0.0.1:6001/velocity/cartesian -H "Content-Type: application/json" -d '{"vx": 10}'
+curl -X GET "http://127.0.0.1:6001/position/cartesian"
+```
+
+### `GET /position/joints`
+
+Retrieves the current angles of all robot joints.
+
+**Response `200 OK`**
+```json
+{
+    "j1": 45.1, "j2": -30.0, "j3": 0.2, "j4": 0.1, "j5": 29.8, "j6": -0.1, "j7": 0.0
+}
+```
+
+**Example**
+```bash
+curl -X GET "http://127.0.0.1:6001/position/joints"
 ```
 
 ---
+## Components
 
-### Gripper Control
+These endpoints control attached components like the gripper and linear track.
+
+### Gripper
 
 #### `POST /gripper/open`
 
 Opens the gripper.
 
-**Request Body:**
-
+**Response `200 OK`**
 ```json
-{
-  "speed": 500,
-  "wait": true
-}
+{ "status": "success", "message": "Gripper opened" }
 ```
-
-**Example:**
-
+**Example**
 ```bash
-curl -X POST http://127.0.0.1:6001/gripper/open -H "Content-Type: application/json" -d '{}'
+curl -X POST "http://127.0.0.1:6001/gripper/open"
 ```
-
----
 
 #### `POST /gripper/close`
 
 Closes the gripper.
 
-**Request Body:**
+**Response `200 OK`**
+```json
+{ "status": "success", "message": "Gripper closed" }
+```
+**Example**
+```bash
+curl -X POST "http://127.0.0.1:6001/gripper/close"
+```
 
+#### `GET /gripper/status`
+
+Retrieves the current status of the gripper.
+
+**Response `200 OK`**
 ```json
 {
-  "speed": 500,
-  "wait": true
+    "position": 850.0,
+    "is_open": true
 }
 ```
+*   `position`: Raw position value from the gripper motor.
 
-**Example:**
-
+**Example**
 ```bash
-curl -X POST http://127.0.0.1:6001/gripper/close -H "Content-Type: application/json" -d '{}'
+curl -X GET "http://127.0.0.1:6001/gripper/status"
 ```
 
----
-
-### Linear Track Control
+### Linear Track
 
 #### `POST /track/move`
 
-Moves the linear track to a specific position.
+Moves the linear track to an absolute position.
 
-**Request Body:**
-
+**Request Body**
 ```json
 {
-  "position": 100,
-  "speed": 100,
-  "wait": true
+    "position": "number",
+    "speed": "integer"
 }
 ```
+*   `speed` (optional, default: 100 mm/s)
 
-**Example:**
-
+**Response `200 OK`**
+```json
+{ "status": "success", "message": "Track move command sent" }
+```
+**Example**
 ```bash
-curl -X POST http://127.0.0.1:6001/track/move -H "Content-Type: application/json" -d '{"position": 100}'
+curl -X POST "http://127.0.0.1:6001/track/move" -H "Content-Type: application/json" -d '{
+    "position": 500
+}'
+```
+
+#### `POST /track/move/location`
+
+Moves the linear track to a pre-defined named location from `location_config.yaml`.
+
+**Request Body**
+```json
+{ "location_name": "string" }
+```
+
+**Response `200 OK`**
+```json
+{ "status": "success", "message": "Track moving to location: start" }
+```
+**Example**
+```bash
+curl -X POST "http://127.0.0.1:6001/track/move/location" -H "Content-Type: application/json" -d '{
+    "location_name": "start"
+}'
+```
+
+#### `GET /track/status`
+
+Retrieves the current status of the linear track.
+
+**Response `200 OK`**
+```json
+{ "position": 500.1 }
+```
+**Example**
+```bash
+curl -X GET "http://127.0.0.1:6001/track/status"
 ```
 
 ---
+## System & Safety
 
-#### `GET /track/position`
+Endpoints for system-level configuration and monitoring.
 
-Gets the current position of the linear track.
+### `POST /safety/level`
 
-**Example:**
+Sets the system's safety level, which can affect speed, acceleration, and collision sensitivity.
 
+**Request Body**
+```json
+{ "level": "string" }
+```
+*   `level`: `"low"`, `"medium"`, or `"high"`
+
+**Response `200 OK`**
+```json
+{ "status": "success", "message": "Safety level set to high" }
+```
+**Example**
 ```bash
-curl http://127.0.0.1:6001/track/position
+curl -X POST "http://127.0.0.1:6001/safety/level" -H "Content-Type: application/json" -d '{
+    "level": "high"
+}'
+```
+
+### `GET /performance`
+
+Retrieves performance statistics from the controller, such as API latency and command processing time.
+
+**Response `200 OK`**
+```json
+{
+    "api_latency_ms": 1.5,
+    "command_rate_hz": 50.2,
+    "cpu_usage_percent": 15.7
+}
+```
+**Example**
+```bash
+curl -X GET "http://127.0.0.1:6001/performance"
 ```
 
 ---
-
 ## WebSocket Interface
 
-The API provides a WebSocket endpoint for real-time status updates.
+A WebSocket is available for receiving real-time status updates from the controller.
 
-### Endpoint: `/ws`
+### `GET /ws`
 
-Connect to this endpoint to receive status updates from the robot, such as position, joint angles, and component states.
+Establishes a WebSocket connection. Once connected, the server will push status updates automatically at a regular interval. This is the same data that drives the web UI.
 
-When a client connects, it will receive an initial status update. The server will then broadcast updates whenever the robot's state changes (e.g., after a move command).
+**Connection URL**: `ws://127.0.0.1:6001/ws`
 
-**Example Client (JavaScript):**
-
-```javascript
-const ws = new WebSocket("ws://127.0.0.1:6001/ws");
-
-ws.onopen = () => {
-  console.log("Connected to xArm WebSocket.");
-};
-
-ws.onmessage = (event) => {
-  const status = JSON.parse(event.data);
-  console.log("Received status update:", status);
-};
-
-ws.onclose = () => {
-  console.log("Disconnected from WebSocket.");
-};
-
-ws.onerror = (error) => {
-  console.error("WebSocket error:", error);
-};
+**Example Message (from server)**
+```json
+{
+    "connected": true,
+    "running": true,
+    "error_code": 0,
+    "mode": 0,
+    "state": 4,
+    "safety_level": "medium",
+    "position_cartesian": [300.1, 0.5, 250.2, 179.9, 0.1, -0.2],
+    "position_joints": [45.1, -30.0, 0.2, 0.1, 29.8, -0.1, 0.0],
+    "components": {
+        "gripper": { "connected": true, "position": 850.0 },
+        "linear_track": { "connected": true, "position": 500.1 }
+    }
+}
 ``` 

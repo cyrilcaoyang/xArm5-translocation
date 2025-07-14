@@ -2,6 +2,58 @@
 
 This comprehensive guide covers all simulation approaches available in the xArm-translocation project and outlines a professional three-stage testing methodology for robot development.
 
+## 🔧 Understanding the `simulation_mode` Parameter
+
+**IMPORTANT**: The `simulation_mode` parameter in the `XArmController` class can be confusing because there are actually **TWO different types of simulation**:
+
+### `simulation_mode=True` → **Software Simulation**
+- **What it is**: Pure Python simulation with **NO network connection**
+- **Use case**: Fast development, testing logic, CI/CD
+- **Physics**: Basic collision detection only
+- **Connection**: No network connection made at all
+- **Example**:
+```python
+# This runs entirely in Python memory - no network connection
+controller = XArmController(
+    profile_name='docker_local',
+    simulation_mode=True  # ← Pure software simulation
+)
+```
+
+### `simulation_mode=False` → **Hardware/Simulator Connection**
+- **What it is**: Real network connection to either:
+  - Real xArm robot hardware, OR
+  - UFACTORY Studio simulator (Docker/desktop)
+- **Use case**: Realistic testing with physics, visual verification
+- **Physics**: Full physics simulation (if connecting to simulator)
+- **Connection**: TCP/IP network connection to specified IP:port
+- **Examples**:
+```python
+# This connects to Docker simulator via network (127.0.0.1:18333)
+controller = XArmController(
+    profile_name='docker_local',
+    simulation_mode=False  # ← Network connection to simulator
+)
+
+# This connects to real robot hardware via network (192.168.1.237:18333)
+controller = XArmController(
+    profile_name='real_hw',
+    simulation_mode=False  # ← Network connection to real robot
+)
+```
+
+### Summary Table
+
+| `simulation_mode` | Network Connection | Target | Physics Engine | Use Case |
+|-------------------|-------------------|--------|----------------|----------|
+| `True` | ❌ None | Python memory | Basic collision detection | Fast development, CI/CD |
+| `False` + `docker_local` profile | ✅ Yes | Docker simulator (127.0.0.1) | Full physics simulation | Realistic testing |
+| `False` + `real_hw` profile | ✅ Yes | Real robot (192.168.1.237) | Real hardware | Production |
+
+**Key Point**: `simulation_mode=False` does NOT mean "real hardware only" - it means "make a network connection" (which could be to a simulator OR real hardware, depending on the profile).
+
+---
+
 ## 📋 Table of Contents
 
 1. [Simulation Options Overview](#simulation-options-overview)
@@ -34,9 +86,9 @@ The project provides multiple simulation approaches for different development ne
 
 ---
 
-## Software Simulation
+## Software Simulation (`simulation_mode=True`)
 
-**Enhanced software simulation with collision detection - No hardware required**
+**Enhanced software simulation with collision detection - No hardware or network connection required**
 
 ### Features
 
@@ -61,17 +113,16 @@ python src/examples/demo_software_sim.py
 ```python
 from xarm_controller import XArmController
 
-# Enable enhanced software simulation
+# Enable enhanced software simulation (no network connection)
 controller = XArmController(
-    config_path='src/settings/',
-    model=7,
-    simulation_mode=True  # Enhanced collision detection
+    profile_name='docker_local',  # Profile doesn't matter for software sim
+    simulation_mode=True  # ← Pure Python simulation, no network!
 )
 
-# Initialize simulation (no network connection)
+# Initialize simulation (no network connection made)
 controller.initialize()
 
-# All commands work identically to hardware
+# All commands work identically to hardware/simulator
 controller.move_joints([0, -30, 0, 30, 0, 0, 0])
 controller.move_to_position(x=300, y=0, z=300)
 controller.open_gripper()
@@ -135,9 +186,9 @@ controller.move_joints([95, 0, 50, 0, 0, 0, 0])  # May be blocked by collision d
 
 ---
 
-## Docker Simulation
+## Docker Simulation (`simulation_mode=False`)
 
-**Official UFACTORY Studio simulator with full physics**
+**Official UFACTORY Studio simulator with full physics - Requires network connection**
 
 ### Features
 
@@ -170,12 +221,12 @@ src/docker/docker_setup.sh stop
 ```python
 from xarm_controller import XArmController
 
-# Connect to Docker simulator
+# Connect to Docker simulator via network connection
 controller = XArmController(
-    config_path='src/settings/',
-    model=7  # Must match Docker simulator model
+    profile_name='docker_local',
+    simulation_mode=False  # ← Network connection to simulator!
 )
-# Uses 127.0.0.1 from config automatically
+# This will connect to 127.0.0.1:18333 (Docker simulator)
 
 # Initialize connection to simulator
 controller.initialize()
@@ -605,4 +656,61 @@ conda run -n sdl2-robots python src/xarm_api_server.py
 # http://localhost:8000/docs
 ```
 
-Both simulation approaches use the same API, making it easy to switch between simulation and real hardware for seamless development and deployment! 
+Both simulation approaches use the same API, making it easy to switch between simulation and real hardware for seamless development and deployment!
+
+---
+
+## 🚨 Common Mistakes & Troubleshooting
+
+### "My Docker demo isn't connecting to the simulator!"
+
+**Problem**: Using `simulation_mode=True` when trying to connect to Docker simulator
+```python
+# ❌ WRONG - This won't connect to Docker simulator
+controller = XArmController(
+    profile_name='docker_local',
+    simulation_mode=True  # This forces pure Python simulation!
+)
+```
+
+**Solution**: Use `simulation_mode=False` to make network connection
+```python
+# ✅ CORRECT - This connects to Docker simulator
+controller = XArmController(
+    profile_name='docker_local',
+    simulation_mode=False  # This makes network connection to 127.0.0.1
+)
+```
+
+### "I want pure software simulation but it's trying to connect to network"
+
+**Problem**: Using `simulation_mode=False` when you want no network connection
+```python
+# ❌ WRONG - This tries to connect to network
+controller = XArmController(
+    profile_name='real_hw',
+    simulation_mode=False  # This tries to connect to 192.168.1.237!
+)
+```
+
+**Solution**: Use `simulation_mode=True` for pure software simulation
+```python
+# ✅ CORRECT - This runs pure Python simulation
+controller = XArmController(
+    profile_name='real_hw',  # Profile ignored in software simulation
+    simulation_mode=True    # Pure Python, no network connection
+)
+```
+
+### "I'm confused about which simulation mode to use"
+
+**Decision Tree**:
+1. **Do you want to see 3D visualization?** → Use `simulation_mode=False` + Docker
+2. **Do you want fastest possible testing?** → Use `simulation_mode=True`
+3. **Do you want to test network communication?** → Use `simulation_mode=False`
+4. **Do you want to run in CI/CD pipeline?** → Use `simulation_mode=True`
+5. **Do you have Docker available?** → If no, use `simulation_mode=True`
+
+**Quick Reference**:
+- `simulation_mode=True` = "I want pure Python simulation"
+- `simulation_mode=False` = "I want to connect to something via network" 

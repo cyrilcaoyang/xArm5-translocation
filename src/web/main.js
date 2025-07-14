@@ -1,10 +1,30 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const API_BASE_URL = 'http://127.0.0.1:6001';
-    const WS_BASE_URL = 'ws://127.0.0.1:6001';
-    const responseEl = document.getElementById('api-response');
+    const API_BASE_URL = `${window.location.protocol}//${window.location.host}`;
+    const WS_URL = `ws://${window.location.host}/ws`;
 
-    // --- Helper Functions ---
-    async function sendRequest(endpoint, method = 'POST', body = null) {
+    const connectBtn = document.getElementById('connect-btn');
+    const disconnectBtn = document.getElementById('disconnect-btn');
+    const configSelect = document.getElementById('config-select');
+    const safetyLevelSelect = document.getElementById('safety-level-select');
+    const simulationModeCheckbox = document.getElementById('simulation-mode');
+
+    const movePosBtn = document.getElementById('move-pos-btn');
+    const moveJointsBtn = document.getElementById('move-joints-btn');
+    const moveLocBtn = document.getElementById('move-loc-btn');
+    const homeBtn = document.getElementById('home-btn');
+    const stopBtn = document.getElementById('stop-btn');
+
+    const openGripperBtn = document.getElementById('open-gripper-btn');
+    const closeGripperBtn = document.getElementById('close-gripper-btn');
+
+    const locationSelect = document.getElementById('location-select');
+    const trackLocationSelect = document.getElementById('track-location-select');
+    const moveTrackLocBtn = document.getElementById('move-track-loc-btn');
+
+    let socket;
+
+    // --- API Helper ---
+    async function apiRequest(endpoint, method = 'GET', body = null) {
         try {
             const options = {
                 method,
@@ -14,171 +34,213 @@ document.addEventListener('DOMContentLoaded', () => {
                 options.body = JSON.stringify(body);
             }
             const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
-            const result = await response.json();
-            responseEl.textContent = JSON.stringify(result, null, 2);
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+            }
+            return response.json();
         } catch (error) {
-            responseEl.textContent = `Error: ${error.message}`;
+            console.error(`API request failed: ${error.message}`);
+            updateStatusText(`Error: ${error.message}`, 'error');
+            return null;
         }
     }
+
+    // --- UI Updates ---
+    function updateStatusUI(data) {
+        // The `is_alive` flag is now the source of truth from the backend.
+        const isConnected = data.is_alive === true;
+
+        // Update connection text and light
+        if (isConnected && data.connection_details) {
+            const details = data.connection_details;
+            const subtext = `${details.host}:${details.port} (${details.profile_name}${details.simulation_mode ? ' - Simulation' : ''})`;
+            updateStatusText('Connected', subtext);
+        } else {
+            updateStatusText('Disconnected');
+        }
+        
+        // Update status grid
+        const systemStatus = data.system_status || {};
+        const componentStates = data.component_states || {};
+
+        document.getElementById('arm-state').textContent = componentStates.arm || 'N/A';
+        document.getElementById('gripper-state').textContent = componentStates.gripper || 'N/A';
+        document.getElementById('track-state').textContent = componentStates.track || 'N/A';
+        document.getElementById('robot-mode').textContent = data.connection_details?.simulation_mode ? 'Simulation' : 'Hardware';
+
+        const formatArray = (arr) => arr ? `[${arr.map(n => n.toFixed(2)).join(', ')}]` : '[...]';
+        document.getElementById('current-position').textContent = formatArray(data.current_position);
+        document.getElementById('current-joints').textContent = formatArray(data.current_joints);
+        document.getElementById('track-position').textContent = data.track_position !== null && data.track_position !== undefined ? data.track_position.toFixed(2) : 'N/A';
+        document.getElementById('last-error').textContent = systemStatus.last_error || 'None';
+        
+        // Set the state of all controls based on the connection status
+        setControlsState(isConnected);
+    }
     
-    function getInputValue(id, isNumber = true) {
-        const value = document.getElementById(id).value;
-        return isNumber ? parseFloat(value) : value;
+    function updateStatusText(text, subtext = null) {
+        const statusText = document.getElementById('status-text');
+        const statusLight = document.getElementById('status-light');
+        
+        statusText.innerHTML = text;
+        if (subtext) {
+            statusText.innerHTML += `<br><small>${subtext}</small>`;
+        }
+
+        if (text.toLowerCase().includes('connected') || text.toLowerCase().includes('success')) {
+            statusLight.className = 'status-light online';
+        } else if (text.toLowerCase().includes('error')) {
+            statusLight.className = 'status-light error';
+        } else {
+            statusLight.className = 'status-light offline';
+        }
     }
 
-    // --- WebSocket for Real-time Status ---
+    function setControlsState(enabled) {
+        // Enable/disable all control buttons except connect
+        const controlButtons = [
+            disconnectBtn, movePosBtn, moveJointsBtn, moveLocBtn, 
+            homeBtn, stopBtn, openGripperBtn, closeGripperBtn, moveTrackLocBtn
+        ];
+        
+        controlButtons.forEach(btn => {
+            if (btn) btn.disabled = !enabled;
+        });
+        
+        // Connect button is opposite - enabled when disconnected
+        connectBtn.disabled = enabled;
+    }
+
+    // --- WebSocket Handling ---
     function connectWebSocket() {
-        const ws = new WebSocket(`${WS_BASE_URL}/ws`);
-
-        ws.onopen = () => {
-            console.log('WebSocket connected');
-            // Status will be updated by the first message
-        };
-
-        ws.onmessage = (event) => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            return;
+        }
+        socket = new WebSocket(WS_URL);
+        socket.onopen = () => console.log('WebSocket connected.');
+        socket.onmessage = (event) => {
             const message = JSON.parse(event.data);
             if (message.type === 'status_update') {
                 updateStatusUI(message.data);
             }
         };
-
-        ws.onclose = () => {
-            console.log('WebSocket disconnected');
-            document.getElementById('robot-status').textContent = 'Disconnected from Arm';
-            document.getElementById('robot-ip').textContent = 'N/A';
-            // Optional: try to reconnect
-            setTimeout(connectWebSocket, 5000);
+        socket.onclose = () => {
+            console.log('WebSocket disconnected.');
+            setControlsState(false);
+            updateStatusText('Disconnected');
         };
-
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            document.getElementById('robot-status').textContent = 'Error';
-        };
+        socket.onerror = (error) => console.error('WebSocket error:', error);
     }
 
-    function updateStatusUI(data) {
-        // Update connection status and IP
-        document.getElementById('robot-status').textContent = data.connection_status || 'N/A';
-        document.getElementById('robot-ip').textContent = data.ip_address || 'N/A';
+    // --- Initial Data Loading ---
+    async function loadInitialData() {
+        // Load connection profiles
+        const profiles = await apiRequest('/api/configurations');
+        if (profiles) {
+            configSelect.innerHTML = profiles.map(p => `<option value="${p}">${p.replace(/_/g, ' ').toUpperCase()}</option>`).join('');
+        }
 
-        if (data.current_position) {
-            const pos = data.current_position;
-            document.getElementById('robot-position').textContent = 
-                `[${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}, ${pos.roll.toFixed(2)}, ${pos.pitch.toFixed(2)}, ${pos.yaw.toFixed(2)}]`;
+        // Load arm locations
+        const armLocations = await apiRequest('/locations');
+        if (armLocations) {
+            locationSelect.innerHTML = armLocations.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('');
         }
-        if (data.current_joints) {
-            const joints = data.current_joints;
-            document.getElementById('robot-joints').textContent = 
-                `[${joints.map(j => j.toFixed(2)).join(', ')}]`;
-        }
-        if (data.track_position !== null && data.track_position !== undefined) {
-             document.getElementById('track-position').textContent = data.track_position.toFixed(2);
-        }
-    }
-
-    async function populateLocations() {
-        try {
-            const response = await fetch(`${API_BASE_URL}/locations`);
-            const data = await response.json();
-            const select = document.getElementById('location-select');
-            select.innerHTML = '<option value="">-- Select Location --</option>'; // Clear existing
-            if (data.locations) {
-                data.locations.forEach(location => {
-                    const option = document.createElement('option');
-                    option.value = location;
-                    option.textContent = location;
-                    select.appendChild(option);
-                });
-            }
-        } catch (error) {
-            console.error('Failed to load locations:', error);
+        
+        // Load track locations
+        const trackLocations = await apiRequest('/track/locations');
+        if (trackLocations) {
+            trackLocationSelect.innerHTML = trackLocations.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('');
         }
     }
-
-
+    
     // --- Event Listeners ---
-    document.getElementById('connect-btn').addEventListener('click', () => {
-        const connectionData = {
-            config_path: 'src/settings/',
-            gripper_type: 'bio',
-            enable_track: true,
-            auto_enable: true,
-            model: 5
-        };
-        sendRequest('/connect', 'POST', connectionData).then(populateLocations);
-    });
-    document.getElementById('disconnect-btn').addEventListener('click', () => {
-        sendRequest('/disconnect');
-        document.getElementById('robot-status').textContent = 'Disconnected from Arm';
-        document.getElementById('robot-ip').textContent = 'N/A';
-    });
-    document.getElementById('home-btn').addEventListener('click', () => sendRequest('/move/home'));
-    document.getElementById('stop-btn').addEventListener('click', () => sendRequest('/move/stop'));
-    document.getElementById('clear-errors-btn').addEventListener('click', () => sendRequest('/clear/errors'));
-    document.getElementById('gripper-open-btn').addEventListener('click', () => {
-        const body = {};
-        const speed = getInputValue('gripper-speed');
-        if (speed) body.speed = speed;
-        sendRequest('/gripper/open', 'POST', body);
-    });
-    
-    document.getElementById('gripper-close-btn').addEventListener('click', () => {
-        const body = {};
-        const speed = getInputValue('gripper-speed');
-        if (speed) body.speed = speed;
-        sendRequest('/gripper/close', 'POST', body);
-    });
-
-    document.getElementById('move-pos-btn').addEventListener('click', () => {
-        const body = {
-            x: getInputValue('pos-x'),
-            y: getInputValue('pos-y'),
-            z: getInputValue('pos-z'),
-            roll: getInputValue('pos-roll'),
-            pitch: getInputValue('pos-pitch'),
-            yaw: getInputValue('pos-yaw'),
-        };
-        const speed = getInputValue('pos-speed');
-        if (speed) body.speed = speed;
-        sendRequest('/move/position', 'POST', body);
-    });
-
-    document.getElementById('move-joints-btn').addEventListener('click', () => {
-        const angles = [
-            getInputValue('j1'), getInputValue('j2'), getInputValue('j3'),
-            getInputValue('j4'), getInputValue('j5'), getInputValue('j6')
-        ];
-        const body = { angles };
-        const speed = getInputValue('joints-speed');
-        if (speed) body.speed = speed;
-        sendRequest('/move/joints', 'POST', body);
-    });
-
-    document.getElementById('move-loc-btn').addEventListener('click', () => {
-        const location_name = document.getElementById('location-select').value;
-        if (location_name) {
-            const body = { location_name };
-            const speed = getInputValue('location-speed');
-            if (speed) body.speed = speed;
-            sendRequest('/move/location', 'POST', body);
+    configSelect.addEventListener('change', () => {
+        const selectedProfile = configSelect.value;
+        // Auto-enable simulation mode for Docker profiles
+        if (selectedProfile.includes('docker')) {
+            simulationModeCheckbox.checked = true;
         } else {
-            document.getElementById('api-response').textContent = 'Please select a location.';
+            simulationModeCheckbox.checked = false;
         }
     });
 
-    document.getElementById('track-move-btn').addEventListener('click', () => {
-        const position = getInputValue('track-pos');
-        const body = { position };
-        const speed = getInputValue('track-speed');
-        if (speed) body.speed = speed;
-        sendRequest('/track/move', 'POST', body);
+    connectBtn.addEventListener('click', async () => {
+        const selectedProfile = configSelect.value;
+        
+        const body = {
+            profile_name: selectedProfile,
+            simulation_mode: simulationModeCheckbox.checked,
+            safety_level: safetyLevelSelect.value,
+        };
+
+        const response = await apiRequest('/connect', 'POST', body);
+        if (response) {
+                // The WebSocket will handle the UI update. We just need to connect it.
+                connectWebSocket();
+        }
     });
 
-    document.getElementById('track-get-btn').addEventListener('click', async () => {
-        await sendRequest('/track/position', 'GET');
+    disconnectBtn.addEventListener('click', async () => {
+        const response = await apiRequest('/disconnect', 'POST');
+        if (response) {
+            // The disconnect endpoint now broadcasts a final "disconnected" status.
+            // We can rely on the WebSocket `onclose` handler to update the UI.
+            updateStatusText(response.message || 'Disconnected');
+        }
+        if (socket) socket.close();
+    });
+
+    movePosBtn.addEventListener('click', () => {
+        const body = {
+            x: parseFloat(document.getElementById('pos-x').value),
+            y: parseFloat(document.getElementById('pos-y').value),
+            z: parseFloat(document.getElementById('pos-z').value),
+            roll: parseFloat(document.getElementById('pos-roll').value) || null,
+            pitch: parseFloat(document.getElementById('pos-pitch').value) || null,
+            yaw: parseFloat(document.getElementById('pos-yaw').value) || null,
+        };
+        apiRequest('/move/position', 'POST', body);
+    });
+
+    moveJointsBtn.addEventListener('click', () => {
+        const angles = document.getElementById('joint-angles').value.split(',').map(Number);
+        apiRequest('/move/joints', 'POST', { angles });
     });
     
-    // Initial connection
-    connectWebSocket();
-    populateLocations();
+    moveLocBtn.addEventListener('click', () => {
+        const location_name = locationSelect.value;
+        apiRequest('/move/location', 'POST', { location_name });
+    });
+
+    homeBtn.addEventListener('click', () => apiRequest('/move/home', 'POST'));
+    stopBtn.addEventListener('click', () => apiRequest('/move/stop', 'POST'));
+
+    openGripperBtn.addEventListener('click', () => apiRequest('/gripper/open', 'POST', {}));
+    closeGripperBtn.addEventListener('click', () => apiRequest('/gripper/close', 'POST', {}));
+    
+    moveTrackLocBtn.addEventListener('click', () => {
+        const location_name = trackLocationSelect.value;
+        apiRequest('/track/move/location', 'POST', { location_name });
+    });
+    
+    // --- Tabs ---
+    window.openTab = (evt, tabName) => {
+        const tabcontent = document.getElementsByClassName("tab-content");
+        for (let i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].style.display = "none";
+            tabcontent[i].classList.remove("active");
+        }
+        const tablinks = document.getElementsByClassName("tab-link");
+        for (let i = 0; i < tablinks.length; i++) {
+            tablinks[i].classList.remove("active");
+        }
+        document.getElementById(tabName).style.display = "block";
+        document.getElementById(tabName).classList.add("active");
+        evt.currentTarget.classList.add("active");
+    };
+
+    // --- Initialization ---
+    setControlsState(false);
+    loadInitialData().catch(console.error);
 }); 

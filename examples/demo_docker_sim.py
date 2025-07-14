@@ -1,146 +1,138 @@
 """
-Docker Simulation Example - Basic Linear Motion and Gripper Control
-==================================================================
+Docker Simulation Example - Basic Motion and Gripper Control
+================================================================
 
 A simple demonstration script for basic robot control using the Docker simulator.
-This example demonstrates:
-1. Basic linear/Cartesian arm movements
-2. Gripper operations (open/close)
-3. Simple joint movements
+This script demonstrates how to connect to the xArm using a connection profile
+from the `xarm_config.yaml` file.
 
-Supports: xArm5 (5 joints), xArm6 (6 joints), xArm7 (7 joints), xArm850 (6 joints)
-Auto-detects robot model from configuration.
+This example will:
+1. Connect to the robot using the 'docker_local' profile.
+2. Initialize the controller in simulation mode.
+3. Perform basic arm and gripper movements.
 
-For advanced linear motor control, see: demo_linear_motor.py
+This example supports any robot model defined in your configuration file.
 
-Please run the docker simulator first and start the xArm firmware inside the container.
-Refer to the README.md for instructions.
+Prerequisites:
+- Docker and Docker Compose must be installed.
+- The xArm Docker simulator must be running.
+  (Run `docker-compose up` from the project root)
 """
-
 import sys
-import time
 import os
+import time
 
-# Add src directory to Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from core.xarm_controller import XArmController, SafetyLevel
 
-from core.xarm_controller import XArmController
-
-
-if __name__ == "__main__":
-    print("=" * 60)
-    print("Docker Simulation Example - Basic Linear Motion & Gripper")
-    print("=" * 60)
-    print("Connecting to xArm simulator at 127.0.0.1")
-    
-    try:
-        # Create XArmController for Docker simulator
-        controller = XArmController(
-            config_path='settings/',
-            gripper_type='bio', 
-            enable_track=True,
-            auto_enable=False
-        )
-        
-        # Override for Docker simulator compatibility
-        from xarm.wrapper import XArmAPI
-        controller.arm = XArmAPI('127.0.0.1', check_joint_limit=False)
-        
-        # Initialize the controller
-        if not controller.initialize():
-            print("Failed to initialize robot controller. Exiting.")
-            sys.exit(1)
-            
-    except Exception as e:
-        print(f"Failed to connect to the robot: {e}")
-        sys.exit(1)
-
+def run_demonstration(controller: XArmController):
+    """Runs a sequence of movements to demonstrate controller functionality."""
     try:
         if not controller.is_alive:
-            print("Robot is not alive. Exiting.")
-            sys.exit(1)
+            print("❌ Robot is not alive. Aborting demonstration.")
+            return
 
-        print("✓ Robot is alive. Starting basic demonstration.")
+        print("✅ Robot is alive and connected. Starting demonstration...")
 
-        # Enable gripper
-        print("\n1. Enabling gripper...")
-        if controller.enable_gripper_component():
-            print("   ✓ Gripper enabled")
+        # 1. Home the robot
+        print("\nStep 1: Homing the robot...")
+        if controller.go_home(wait=True):
+            print("   ✅ Robot successfully homed.")
         else:
-            print("   ⚠️  Gripper not available in simulator")
+            print("   ⚠️  Failed to home the robot. It may already be home or in an error state.")
+        time.sleep(1)
 
-        # Set arm to home position
-        print("\n2. Moving arm to home position...")
-        current_joints = controller.get_current_joints()
-        if current_joints:
-            print(f"   Current joints: {current_joints}")
-        
-        # Get current position
-        current_pos = controller.get_current_position()
-        if current_pos:
-            print(f"   Current position: {current_pos}")
-
-        # Demonstrate gripper control
-        print("\n3. Demonstrating gripper control...")
+        # 2. Demonstrate Gripper Control
+        print("\nStep 2: Demonstrating Gripper Control...")
         if controller.has_gripper() and controller.is_component_enabled('gripper'):
             print("   Opening gripper...")
-            if controller.open_gripper():
-                print("   ✓ Gripper opened")
+            if controller.open_gripper(wait=True):
+                print("   ✅ Gripper opened.")
             else:
-                print("   ✗ Failed to open gripper")
-            
+                print("   ❌ Failed to open gripper.")
             time.sleep(2)
-            
+
             print("   Closing gripper...")
-            if controller.close_gripper():
-                print("   ✓ Gripper closed")
+            if controller.close_gripper(wait=True):
+                print("   ✅ Gripper closed.")
             else:
-                print("   ✗ Failed to close gripper")
+                print("   ❌ Failed to close gripper.")
         else:
-            print("   ⚠️  Gripper not available - skipping gripper demo")
+            print("   ℹ️  Gripper not available or not enabled, skipping gripper demo.")
+        time.sleep(1)
 
-        # Demonstrate basic linear motion
-        print("\n4. Demonstrating basic linear motion...")
-        print("   Note: Some movements may fail in Docker simulator due to state constraints")
-        
-        # Try relative movement
-        print("   Attempting small relative movement...")
-        if controller.move_relative(dz=10):
-            print("   ✓ Moved 10mm up in Z")
-            time.sleep(1)
-            
-            if controller.move_relative(dz=-10):
-                print("   ✓ Moved back to original Z position")
-            else:
-                print("   ⚠️  Could not return to original Z position")
+        # 3. Demonstrate Relative Cartesian Movement
+        print("\nStep 3: Demonstrating Relative Cartesian Movement...")
+        print("   Moving arm 50mm up (relative to base frame)...")
+        if controller.move_relative(dz=50):
+            print("   ✅ Moved up successfully.")
         else:
-            print("   ⚠️  Relative movement not available in simulator")
+            print("   ❌ Failed to move up.")
+        time.sleep(2)
 
-        # Final status
-        print("\n5. Final status check...")
-        final_pos = controller.get_current_position()
-        final_joints = controller.get_current_joints()
-        
-        if final_pos:
-            print(f"   Final position: {final_pos}")
-        if final_joints:
-            print(f"   Final joints: {final_joints}")
-        
-        print("   ✅ Basic demonstration completed")
+        print("   Moving arm 50mm down...")
+        if controller.move_relative(dz=-50):
+            print("   ✅ Moved down successfully.")
+        else:
+            print("   ❌ Failed to move down.")
+        time.sleep(1)
+
+        # 4. Move to a safe 'stow' position using joint control
+        print("\nStep 4: Moving to a stow position via joint control...")
+        stow_joints = [0, -45, 0, -90, 0] # A safe position for a 5-axis arm
+        if controller.move_joints(stow_joints, wait=True):
+            print("   ✅ Moved to stow position.")
+        else:
+            print("   ❌ Failed to move to stow position.")
 
     except Exception as e:
-        print(f"\n❌ Error during demonstration: {e}")
+        print(f"\n❌ An error occurred during the demonstration: {e}")
+        import traceback
+        traceback.print_exc()
+
+def main():
+    """Main function to initialize and run the demo."""
+    print("=" * 60)
+    print("  xArm Docker Simulation Example")
+    print("=" * 60)
+    
+    controller = None
+    try:
+        print("Connecting to robot using 'docker_local' profile...")
+        
+        # Initialize the controller using a profile name.
+        # The controller will automatically load settings from xarm_config.yaml.
+        # We explicitly disable auto_enable to control initialization manually.
+        controller = XArmController(
+            profile_name='docker_local',
+            simulation_mode=False,
+            safety_level=SafetyLevel.LOW, # Use LOW for less restrictive simulation
+            auto_enable=False # Prevent initialization within the constructor
+        )
+        
+        # The initialize method handles the connection and setup.
+        print("Initializing controller...")
+        if not controller.initialize():
+            print("🔥 Failed to initialize robot controller. Please ensure the Docker")
+            print("   simulator is running and the 'docker_local' profile in")
+            print("   `src/settings/xarm_config.yaml` is correct.")
+            sys.exit(1)
+        
+        run_demonstration(controller)
+
+    except Exception as e:
+        print(f"🔥 An unexpected error occurred: {e}")
         import traceback
         traceback.print_exc()
         
     finally:
-        print(f"\n6. Cleanup:")
-        print("   Disconnecting from robot...")
-        controller.disconnect()
-        print("   ✓ Disconnected successfully")
-        print("=" * 60)
-        print("For advanced linear motor control, run:")
-        print("  python examples/linear_motor_demo.py --help")
-        print("=" * 60)
+        if controller:
+            print("\n" + "=" * 60)
+            print("🚀 Demonstration finished. Cleaning up...")
+            controller.disconnect()
+            print("✅ Controller disconnected.")
+            print("=" * 60)
+
+if __name__ == "__main__":
+    main()
             
             

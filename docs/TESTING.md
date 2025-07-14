@@ -1,223 +1,197 @@
-# Testing Guide for XArm Translocation
+# Testing Guide
 
-This guide covers how to run tests for the XArm Translocation project, including both unit tests and Docker integration tests.
+This guide provides a comprehensive overview of the three-stage testing strategy for the xArm-translocation project, designed to ensure robust, safe, and reliable robot applications. The strategy progresses from pure software simulation to a full physics simulation, and finally to real hardware validation.
 
-## Test Structure
+## Three-Stage Testing Strategy
 
-```
-tests/
-├── __init__.py                 # Test package
-├── conftest.py                 # Pytest fixtures and configuration
-├── test_xarm_controller.py     # Unit tests (48 tests)
-└── test_docker_integration.py  # Docker integration tests
+The project's testing methodology is broken down into three distinct stages:
 
-scripts/
-└── test_with_docker.py         # Helper script for Docker testing
+1.  **Stage 1: Software Simulation**: Ideal for initial development, logic validation, and continuous integration. It is fast, lightweight, and carries zero risk to physical hardware.
+2.  **Stage 2: Docker-Based Simulation**: Uses a full-fledged physics simulator for realistic dynamics, precise collision detection, and visual verification.
+3.  **Stage 3: Real Hardware Testing**: The final validation stage on the physical xArm robot to test performance, safety, and integration in a real-world environment.
 
-pytest.ini                      # Pytest configuration
-```
+---
 
-## Prerequisites
+### Comparison of Simulation Modes
 
-### For Unit Tests Only
-```bash
-conda run -n sdl2-robots pip install pytest pytest-mock pytest-cov
-```
+| Feature                 | Stage 1: Software Simulation | Stage 2: Docker Simulation |
+| ----------------------- | ---------------------------- | -------------------------- |
+| **Hardware Required**   | ❌ No                        | ❌ No                      |
+| **Setup Complexity**    | 🟢 Simple                    | 🟡 Moderate                |
+| **Physics Engine**      | ❌ No physics                | ✅ Full physics            |
+| **Collision Detection** | ✅ Logic-based               | ✅ Physics-based           |
+| **Visual Interface**    | ❌ Console only              | ✅ 3D Web UI               |
+| **Resource Usage**      | 🟢 Minimal                   | 🟡 High CPU/GPU            |
+| **Use Case**            | Logic & algorithm validation | Realistic motion testing   |
 
-### For Docker Integration Tests
-1. **Docker installed and running**
-2. **xArm Docker image** (pulls automatically if needed):
-   ```bash
-   docker pull danielwang123321/uf-ubuntu-docker
-   ```
+---
 
-## Running Tests
+## Stage 1: Software Simulation (Built-in)
 
-### 🧪 Unit Tests (No Hardware Required)
+The controller has a built-in simulation mode that does not require Docker or any external dependencies. It works by mocking the robot's hardware interface, allowing you to test your code's logic, parameter validation, and error handling.
 
-Unit tests use mocked XArmAPI and test all XArmController functionality:
+This mode includes **logic-based collision detection**:
+*   **Joint Limits**: Prevents movements that would exceed the specific model's joint angle limits.
+*   **Workspace Boundaries**: Enforces Cartesian workspace limits to prevent the arm from trying to move outside its reachable area.
 
-```bash
-# Run all unit tests
-conda run -n sdl2-robots python -m pytest tests/test_xarm_controller.py -v
+### How to Use
 
-# Run with coverage
-conda run -n sdl2-robots python -m pytest tests/test_xarm_controller.py --cov=src --cov-report=term-missing
+To activate the built-in simulation mode, simply instantiate the `XArmController` with the `simulation_mode=True` parameter.
 
-# Run specific test class
-conda run -n sdl2-robots python -m pytest tests/test_xarm_controller.py::TestMovementMethods -v
+```python
+from src.core.xarm_controller import XArmController
 
-# Run using helper script
-conda run -n sdl2-robots python scripts/test_with_docker.py --unit-only
-```
+# Enable software simulation mode
+controller = XArmController(
+    model=6,
+    simulation_mode=True
+)
 
-**Unit Test Coverage:**
-- ✅ 48 tests covering all XArmController functionality
-- ✅ 66% code coverage
-- ✅ Tests initialization, movement, gripper control, track control, state management
-- ✅ Error handling and edge cases
-
-### 🐳 Docker Integration Tests (Requires Docker)
-
-Integration tests run against the actual Docker simulator:
-
-#### Option 1: Automatic Docker Management
-```bash
-# Run all tests (unit + Docker integration)
-conda run -n sdl2-robots python scripts/test_with_docker.py
-
-# Run only Docker integration tests
-conda run -n sdl2-robots python scripts/test_with_docker.py --docker-only
-
-# Start container and run tests (xArm 6)
-conda run -n sdl2-robots python scripts/test_with_docker.py --arm-type 6
-
-# Just start the container (no tests)
-conda run -n sdl2-robots python scripts/test_with_docker.py --start-container
+# Initialize the controller (no hardware connection is made)
+if controller.initialize():
+    print("Software simulation initialized successfully.")
+    # All controller commands can be used here
+    controller.move_to_position(x=300, y=0, z=300)
+    controller.disconnect()
 ```
 
-#### Option 2: Manual Docker Management
+### When to Use
 
-**Start Docker Container:**
+*   Initial algorithm development and logic testing.
+*   Running unit tests in a Continuous Integration (CI/CD) pipeline.
+*   Quickly testing error handling and state management without hardware.
+
+---
+
+## Stage 2: Docker-Based Simulation
+
+For higher-fidelity testing, this project supports the official UFACTORY xArm simulator, which runs in a Docker container. This provides a realistic physics environment, a 3D web interface, and accurate collision detection based on the robot's 3D model. The controller connects to this simulator via a network socket, just as it would with a real robot.
+
+### How to Use
+
+#### Step 1: Start the Docker Container
+
+Run the following command in your terminal to download the image and start the container. This only needs to be done once.
+
 ```bash
 docker run -d --name uf_software \
-  -p 18333:18333 -p 502:502 -p 503:503 -p 504:504 \
-  -p 30000:30000 -p 30001:30001 -p 30002:30002 -p 30003:30003 \
-  danielwang123321/uf-ubuntu-docker
+    -p 18333:18333 \
+    -p 502:502 \
+    -p 503:503 \
+    -p 504:504 \
+    -p 30000:30000 \
+    -p 30001:30001 \
+    -p 30002:30002 \
+    -p 30003:30003 \
+    danielwang123321/uf-ubuntu-docker
 ```
+*Note: This Docker image is a community-provided one. Please check the official UFACTORY website or GitHub for the latest recommended image.*
 
-**Start xArm Firmware (inside container):**
+You can check if the container is running with `docker ps`.
+
+#### Step 2: Start the xArm Firmware
+
+Once the container is running, start the firmware simulation inside it. The command below is for an **xArm6**. Replace `6` with `5` or `7` for other models.
+
 ```bash
-# For xArm 6
 docker exec uf_software /xarm_scripts/xarm_start.sh 6 6
-
-# For xArm 5
-docker exec uf_software /xarm_scripts/xarm_start.sh 5 5
-
-# For xArm 7  
-docker exec uf_software /xarm_scripts/xarm_start.sh 7 7
 ```
 
-**Run Tests:**
-```bash
-conda run -n sdl2-robots python -m pytest tests/test_docker_integration.py -v -m integration
+The simulator is now running and will be accessible to your controller at `127.0.0.1`.
+
+#### Step 3: Connect from your Code
+
+Your controller will connect to the simulator automatically if the `host` in your `xarm_config.yaml` is set to `127.0.0.1` (which is the default). Ensure `simulation_mode` is `False`.
+
+```python
+from src.core.xarm_controller import XArmController
+
+# Connect to the Docker simulator (ensure model matches the simulator)
+controller = XArmController(model=6)
+
+# Initialize the controller (connects to 127.0.0.1)
+if controller.initialize():
+    print("Connected to Docker simulator successfully.")
+    controller.move_to_position(x=300, y=0, z=300)
+    controller.disconnect()
 ```
 
-**Cleanup:**
+#### Step 4: (Optional) Access the Web UI
+
+You can view a 3D visualization of the robot by navigating to **[http://localhost:18333](http://localhost:18333)** in your browser.
+
+#### Step 5: Stopping the Simulator
+
+To stop and remove the container when you are finished, run:
+
 ```bash
 docker stop uf_software
 docker rm uf_software
 ```
 
-### 🎯 Test Categories
+### When to Use
 
-#### Unit Tests (`tests/test_xarm_controller.py`)
-- **TestXArmControllerInitialization** - Controller creation and configuration
-- **TestXArmControllerConnection** - Connection handling
-- **TestComponentManagement** - Enable/disable components
-- **TestMovementMethods** - Joint, linear, relative movements
-- **TestGripperControl** - BIO, Standard, RobotIQ grippers
-- **TestLinearTrackControl** - Track movement and control
-- **TestStateManagement** - State tracking and error handling
-- **TestUtilityMethods** - Helper functions and properties
-- **TestErrorHandling** - Edge cases and error conditions
+*   Verifying complex trajectories in a realistic environment.
+*   Testing for subtle collisions that logic-based checks might miss.
+*   Visualizing robot motion for debugging or demonstrations.
 
-#### Integration Tests (`tests/test_docker_integration.py`)
-- **TestDockerIntegration** - Basic Docker connection and workflow
-- **TestDockerStressTest** - Multiple connections and stress testing
-- **TestDockerComponentIsolation** - Individual component testing
+### Connecting to a Remote Simulator (e.g., via VPN/Tailscale)
 
-## Test Configuration
+You can run the Docker simulator on a separate, more powerful machine and connect to it over a secure network. The process is nearly identical to connecting to a local simulator.
 
-### Pytest Markers
+**On the Remote Server (e.g., IP `100.64.254.50`):**
+1.  Start the Docker container and firmware as described above. The `-p` flags will expose the simulator's ports to the server's Tailscale network interface.
+2.  Ensure your client machine can ping the server's Tailscale IP.
+
+**On the Client Machine:**
+Simply specify the server's Tailscale IP address as the `host` when connecting.
+
+**Example (Using the API):**
 ```bash
-# Run only integration tests
-pytest -m integration
-
-# Run only slow tests
-pytest -m slow
-
-# Skip integration tests
-pytest -m "not integration"
+curl -X POST "http://127.0.0.1:6001/connect" -H "Content-Type: application/json" -d '{
+  "host": "100.64.254.50",
+  "model": 6
+}'
 ```
 
-### Coverage Settings
-- Minimum coverage: 80%
-- Coverage reports: Terminal + HTML (`htmlcov/`)
-- Source directory: `src/`
-
-## Test Results Summary
-
-### ✅ Current Test Status
-
-| Test Category | Count | Status | Coverage |
-|---|---|---|---|
-| **Unit Tests** | 48 | ✅ All Pass | 66% |
-| **Integration Tests** | 8 | ⏳ Needs Docker | N/A |
-| **Total** | 56 | ✅ 48/56 Pass | 66% |
-
-### 📊 Test Coverage Breakdown
-
-**Well Tested (>80% coverage):**
-- Component state management
-- Movement methods (joint, linear, relative)
-- Configuration loading
-- Error callbacks and handling
-- Utility methods
-
-**Partially Tested (40-80% coverage):**
-- Gripper control methods
-- Linear track control
-- System status reporting
-
-**Needs More Tests (<40% coverage):**
-- Some error edge cases
-- Velocity control paths
-- Position update methods
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"Docker simulator not available"**
-   - Check Docker is running: `docker ps`
-   - Check container is running: `docker ps | grep uf_software`
-   - Check firmware started: Wait 10+ seconds after starting firmware
-
-2. **Import errors**
-   - Ensure `src/` is in Python path
-   - Check conda environment: `conda activate sdl2-robots`
-
-3. **Test failures**
-   - Check mocked methods are properly configured
-   - Verify test fixtures are set up correctly
-   - Look at specific error messages in test output
-
-### Docker Web UI
-
-When Docker container is running, access the web simulator at:
-**http://localhost:18333**
-
-### Quick Health Check
-
-```bash
-# Check if everything is working
-conda run -n sdl2-robots python -c "
-import sys, os
-sys.path.append('src')
-from xarm_controller import XArmController
-controller = XArmController(gripper_type='bio', auto_enable=False)
-print('✅ XArmController imports successfully')
-print('✅ Tests should work!')
-"
+**Example (Directly in Python):**
+```python
+controller = XArmController(
+    host='100.64.254.50',
+    model=6
+)
+controller.initialize()
 ```
 
-## Next Steps
+---
 
-1. **Run unit tests** to verify functionality
-2. **Start Docker container** for integration testing
-3. **Run integration tests** against Docker simulator
-4. **Review coverage report** to identify untested code
-5. **Add more tests** for edge cases as needed
+## Stage 3: Real Hardware Testing
 
-For more details, see the test files themselves or run with `-v` for verbose output. 
+The final stage is to validate your code on a physical xArm. At this stage, your code's logic and motion paths should already be well-tested from the simulation stages. Testing on hardware is focused on verifying real-world performance, sensor integration, and safety.
+
+### How to Use
+
+1.  Ensure the robot is powered on and connected to the network.
+2.  Update your `xarm_config.yaml` or pass the robot's IP address directly to the controller.
+3.  Run your code. **Always be prepared to trigger the emergency stop.**
+
+```python
+from src.core.xarm_controller import XArmController
+
+# Connect to the real robot
+controller = XArmController(
+    host='192.168.1.XXX', # Replace with your robot's IP
+    model=6
+)
+
+if controller.initialize():
+    # Run pre-validated, safe movements first
+    # ...
+    controller.disconnect()
+```
+
+### Safety First
+
+*   Always have the emergency stop button within reach.
+*   Start with slow speeds and simple, non-obstructed movements.
+*   Define and test safety boundaries and collision sensitivity settings before running complex routines. 

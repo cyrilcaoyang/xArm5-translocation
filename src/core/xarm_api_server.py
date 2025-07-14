@@ -22,7 +22,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
 
-from .xarm_controller import XArmController
+from .xarm_controller import XArmController, SafetyLevel
+from .xarm_utils import load_config
 from .xarm_controller import ComponentState
 
 # Configure logging
@@ -58,57 +59,90 @@ manager = ConnectionManager()
 
 # Pydantic models for request/response
 class ConnectionRequest(BaseModel):
-    config_path: str = Field(default='src/settings/', description="Path to configuration files")
-    gripper_type: str = Field(default='bio', description="Type of gripper: bio, standard, robotiq, or none")
-    enable_track: bool = Field(default=True, description="Enable linear track functionality")
-    auto_enable: bool = Field(default=True, description="Auto-enable components during initialization")
-    model: Optional[int] = Field(default=None, description="Robot model: 5, 6, 7, or 850")
+    """Request model for establishing a connection to the controller."""
+    profile_name: Optional[str] = Field(default=None, description="Name of the connection profile to use.")
+    host: Optional[str] = Field(default=None, description="IP address of the robot. Overrides profile.")
+    model: Optional[int] = Field(default=None, description="Robot model: 5, 6, 7. Overrides profile.")
+    simulation_mode: bool = Field(default=False, description="Enable software simulation mode (no hardware required).")
+    safety_level: str = Field(default="MEDIUM", description="Set the safety validation level: LOW, MEDIUM, HIGH.")
+
+    def get_safety_level_enum(self) -> SafetyLevel:
+        """Convert string safety level to enum"""
+        level_map = {
+            "LOW": SafetyLevel.LOW,
+            "MEDIUM": SafetyLevel.MEDIUM, 
+            "HIGH": SafetyLevel.HIGH
+        }
+        return level_map.get(self.safety_level.upper(), SafetyLevel.MEDIUM)
 
 class PositionRequest(BaseModel):
-    x: float = Field(description="X coordinate")
-    y: float = Field(description="Y coordinate") 
-    z: float = Field(description="Z coordinate")
-    roll: Optional[float] = Field(default=None, description="Roll angle")
-    pitch: Optional[float] = Field(default=None, description="Pitch angle")
-    yaw: Optional[float] = Field(default=None, description="Yaw angle")
-    speed: Optional[float] = Field(default=None, ge=1, le=1000, description="Movement speed (1-1000 mm/s)")
-    wait: bool = Field(default=True, description="Wait for movement completion")
+    """Request model for Cartesian position movement."""
+    x: float = Field(description="X coordinate in mm")
+    y: float = Field(description="Y coordinate in mm")
+    z: float = Field(description="Z coordinate in mm")
+    roll: Optional[float] = Field(default=None, description="Roll angle in degrees")
+    pitch: Optional[float] = Field(default=None, description="Pitch angle in degrees")
+    yaw: Optional[float] = Field(default=None, description="Yaw angle in degrees")
+    speed: Optional[float] = Field(default=None, description="Movement speed (validated by safety level)")
+    check_collision: bool = Field(default=True, description="Perform collision checking before movement.")
+    wait: bool = Field(default=True, description="Wait for movement to complete.")
 
 class JointRequest(BaseModel):
-    angles: List[float] = Field(description="Joint angles in degrees")
-    speed: Optional[float] = Field(default=None, ge=1, le=180, description="Movement speed (1-180 °/s)")
-    acceleration: Optional[float] = Field(default=None, ge=1, le=1000, description="Movement acceleration (1-1000 °/s²)")
-    wait: bool = Field(default=True, description="Wait for movement completion")
+    """Request model for joint angle movement."""
+    angles: List[float] = Field(description="List of joint angles in degrees")
+    speed: Optional[float] = Field(default=None, description="Movement speed (validated by safety level)")
+    acceleration: Optional[float] = Field(default=None, description="Movement acceleration (validated by safety level)")
+    check_collision: bool = Field(default=True, description="Perform collision checking before movement.")
+    wait: bool = Field(default=True, description="Wait for movement to complete.")
 
 class RelativeRequest(BaseModel):
-    dx: float = Field(default=0, description="Delta X")
-    dy: float = Field(default=0, description="Delta Y")
-    dz: float = Field(default=0, description="Delta Z")
-    droll: float = Field(default=0, description="Delta roll")
-    dpitch: float = Field(default=0, description="Delta pitch")
-    dyaw: float = Field(default=0, description="Delta yaw")
-    speed: Optional[float] = Field(default=None, ge=1, le=1000, description="Movement speed (1-1000 mm/s)")
+    """Request model for relative Cartesian movement."""
+    dx: float = Field(default=0, description="Delta X in mm")
+    dy: float = Field(default=0, description="Delta Y in mm")
+    dz: float = Field(default=0, description="Delta Z in mm")
+    droll: float = Field(default=0, description="Delta roll in degrees")
+    dpitch: float = Field(default=0, description="Delta pitch in degrees")
+    dyaw: float = Field(default=0, description="Delta yaw in degrees")
+    speed: Optional[float] = Field(default=None, description="Movement speed (validated by safety level)")
+    check_collision: bool = Field(default=True, description="Perform collision checking before movement.")
+    wait: bool = Field(default=True, description="Wait for movement to complete.")
 
 class LocationRequest(BaseModel):
-    location_name: str = Field(description="Named location from config")
-    speed: Optional[float] = Field(default=None, ge=1, description="Movement speed (1-1000 mm/s for Cartesian, 1-180 °/s for Joints)")
+    """Request model for moving to a named location."""
+    location_name: str = Field(description="Name of the location defined in location_config.yaml")
+    speed: Optional[float] = Field(default=None, description="Movement speed (validated by safety level)")
+    check_collision: bool = Field(default=True, description="Perform collision checking before movement.")
+    wait: bool = Field(default=True, description="Wait for movement to complete.")
 
 class TrackRequest(BaseModel):
-    position: float = Field(ge=0, le=700, description="Linear track position (0-700 mm)")
-    speed: Optional[float] = Field(default=None, ge=1, le=1000, description="Movement speed (1-1000 mm/s)")
-    wait: bool = Field(default=True, description="Wait for movement completion")
+    """Request model for linear track movement."""
+    position: float = Field(description="Target position for the linear track in mm")
+    speed: Optional[float] = Field(default=None, description="Movement speed for the track (validated by safety level)")
+    wait: bool = Field(default=True, description="Wait for movement to complete.")
+
+class TrackLocationRequest(BaseModel):
+    """Request model for moving linear track to a named location."""
+    location_name: str = Field(description="Name of the location from linear_track_config.yaml")
+    speed: Optional[float] = Field(default=None, description="Movement speed for the track (validated by safety level)")
+    wait: bool = Field(default=True, description="Wait for movement to complete.")
 
 class GripperRequest(BaseModel):
-    speed: Optional[float] = Field(default=None, ge=1, le=5000, description="Gripper speed (1-5000)")
-    wait: bool = Field(default=True, description="Wait for operation completion")
+    """Request model for gripper operations."""
+    speed: Optional[float] = Field(default=None, description="Gripper speed (1-5000)")
+    wait: bool = Field(default=True, description="Wait for operation to complete.")
 
 class VelocityRequest(BaseModel):
-    vx: float = Field(default=0, description="Velocity in X direction")
-    vy: float = Field(default=0, description="Velocity in Y direction")
-    vz: float = Field(default=0, description="Velocity in Z direction")
-    vroll: float = Field(default=0, description="Angular velocity around X axis")
-    vpitch: float = Field(default=0, description="Angular velocity around Y axis")
-    vyaw: float = Field(default=0, description="Angular velocity around Z axis")
+    """Request model for Cartesian velocity control."""
+    vx: float = Field(default=0, description="Velocity in X direction (mm/s)")
+    vy: float = Field(default=0, description="Velocity in Y direction (mm/s)")
+    vz: float = Field(default=0, description="Velocity in Z direction (mm/s)")
+    vroll: float = Field(default=0, description="Angular velocity around X axis (deg/s)")
+    vpitch: float = Field(default=0, description="Angular velocity around Y axis (deg/s)")
+    vyaw: float = Field(default=0, description="Angular velocity around Z axis (deg/s)")
+
+class ComponentRequest(BaseModel):
+    """Request model for enabling/disabling a component."""
+    component: str = Field(description="Component to manage ('gripper' or 'track')")
 
 # Application lifespan management
 @asynccontextmanager
@@ -164,11 +198,25 @@ async def broadcast_status_update():
     if controller:
         try:
             # More detailed status
-            is_connected = controller.arm.connected
+            is_connected = controller.is_alive and controller.arm.connected if hasattr(controller, 'arm') and controller.arm else False
+            
+            # Standardize connection details
+            connection_details = None
+            if is_connected:
+                connection_details = {
+                    "host": controller.host,
+                    "port": controller.xarm_config.get('port', 18333),
+                    "profile_name": getattr(controller, 'profile_name', 'unknown'),
+                    "simulation_mode": controller.simulation_mode
+                }
+            
+            system_status = controller.get_system_status()
+            
             status_info = {
-                "connection_status": "Connected to Arm" if is_connected else "Disconnected from Arm",
-                "ip_address": controller.xarm_config.get('host') if is_connected else "N/A",
-                "system_status": controller.get_system_status(),
+                "connection_status": "Connected" if is_connected else "Disconnected",
+                "connection_details": connection_details,
+                "system_status": system_status,
+                "is_alive": system_status.get('is_alive', False),
                 "component_states": controller.get_component_states(),
                 "current_position": controller.get_current_position(),
                 "current_joints": controller.get_current_joints(),
@@ -200,218 +248,248 @@ async def root():
         "connected": controller is not None and controller.is_alive
     }
 
+@app.get("/api/configurations")
+async def get_configurations():
+    """Scan and return available connection profiles from the main config file."""
+    config_path = os.path.join('src', 'settings', 'xarm_config.yaml')
+    try:
+        full_config = load_config(config_path)
+        profiles = full_config.get('profiles', {})
+        return sorted(list(profiles.keys()))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Main xarm_config.yaml not found.")
+    except Exception as e:
+        logger.error(f"Failed to read profiles from xarm_config.yaml: {e}")
+        raise HTTPException(status_code=500, detail="Failed to read profiles.")
+
+
 @app.post("/connect")
-async def connect_robot(request: ConnectionRequest):
-    """Connect to the robot"""
+async def connect_robot(request: ConnectionRequest, background_tasks: BackgroundTasks):
+    """
+    Connect to the robot controller.
+
+    This endpoint initializes the `XArmController`, allowing you to choose
+    between hardware and simulation modes, and set the initial safety level.
+    """
     global controller
     
+    if controller and controller.is_alive:
+        raise HTTPException(status_code=400, detail="A robot is already connected. Please disconnect first.")
+
     try:
-        # Create controller instance
+        # Create and initialize the controller instance
         controller = XArmController(
-            config_path=request.config_path,
-            gripper_type=request.gripper_type,
-            enable_track=request.enable_track,
-            auto_enable=request.auto_enable,
-            model=request.model
+            profile_name=request.profile_name,
+            host=request.host,
+            model=request.model,
+            simulation_mode=request.simulation_mode,
+            safety_level=request.get_safety_level_enum()
         )
         
-        # Initialize connection
         if controller.initialize():
-            await broadcast_status_update()
+            background_tasks.add_task(broadcast_status_update)
             return {
-                "message": "Successfully connected to robot",
+                "message": f"Successfully connected in {'Simulation' if request.simulation_mode else 'Hardware'} mode.",
+                "connection_details": {
+                    "host": controller.host,
+                    "port": controller.xarm_config.get('port', 18333),
+                    "profile_name": request.profile_name or 'custom',
+                    "simulation_mode": request.simulation_mode
+                },
                 "model": controller.model_name,
                 "num_joints": controller.num_joints,
-                "gripper_type": controller.gripper_type,
+                "gripper_type": controller.gripper_type if hasattr(controller, 'gripper_type') else 'N/A',
                 "has_track": controller.has_track(),
-                "component_states": controller.get_component_states()
+                "component_states": controller.get_component_states(),
+                "safety_level": controller.safety_level.name
             }
         else:
             controller = None
-            raise HTTPException(status_code=500, detail="Failed to initialize robot connection")
+            raise HTTPException(status_code=500, detail="Failed to initialize robot connection. Check logs for details.")
             
     except Exception as e:
         controller = None
-        logger.error(f"Connection failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Connection failed: {str(e)}")
+        logger.error(f"Connection failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during connection: {e}")
 
 @app.post("/disconnect")
 async def disconnect_robot():
-    """Disconnect from the robot"""
+    """Disconnect from the robot and ensure the state is cleaned up."""
     global controller
     
+    connection_info = None
+    if controller:
+        # Capture connection info before disconnecting
+        connection_info = {
+            "host": controller.host,
+            "port": controller.xarm_config.get('port', 18333),
+            "profile_name": getattr(controller, 'profile_name', 'unknown')
+        }
+    
+    message = "Robot was not connected."
     if controller:
         try:
             controller.disconnect()
-            controller = None
-            await broadcast_status_update()
-            return {"message": "Successfully disconnected from robot"}
+            message = f"Successfully disconnected from {connection_info['host']}:{connection_info['port']}"
         except Exception as e:
-            logger.error(f"Disconnect failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Disconnect failed: {str(e)}")
-    else:
-        return {"message": "Robot not connected"}
+            logger.error(f"Disconnect failed: {e}", exc_info=True)
+            # Still proceed to set controller to None
+            message = f"Disconnected from {connection_info['host']}:{connection_info['port']} (with errors)"
+        finally:
+            controller = None
+    
+    # Broadcast a final disconnected status to all clients to sync the UI
+    await manager.broadcast(json.dumps({
+        "type": "status_update",
+        "data": {
+            "connection_status": "Disconnected",
+            "connection_details": None,
+            "system_status": {"is_alive": False},
+            "component_states": {
+                "arm": "disabled",
+                "gripper": "disabled",
+                "track": "disabled"
+            }
+        }
+    }))
+    
+    return {
+        "message": message,
+        "connection_details": connection_info
+    }
 
 @app.get("/status")
 async def get_status():
-    """Get current robot status"""
-    ctrl = get_controller()
+    """Get the current status of the robot and all components."""
+    c = get_controller()
     
-    try:
-        is_connected = ctrl.arm.connected
-        return {
-            "connection_status": "Connected to Arm" if is_connected else "Disconnected from Arm",
-            "ip_address": ctrl.xarm_config.get('host') if is_connected else "N/A",
-            "system_status": ctrl.get_system_status(),
-            "component_states": ctrl.get_component_states(),
-            "current_position": ctrl.get_current_position(),
-            "current_joints": ctrl.get_current_joints(),
-            "track_position": ctrl.get_track_position() if ctrl.has_track() else None
+    # Include connection details if connected
+    connection_details = None
+    if c and c.is_alive:
+        connection_details = {
+            "host": c.host,
+            "port": c.xarm_config.get('port', 18333),
+            "profile_name": getattr(c, 'profile_name', 'unknown'),
+            "simulation_mode": c.simulation_mode
         }
-    except Exception as e:
-        logger.error(f"Get status failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Error getting status: {str(e)}")
+    
+    return {
+        "connection_state": c.states.get('connection'),
+        "connection_details": connection_details,
+        "arm_state": c.states.get('arm'),
+        "gripper_state": c.states.get('gripper'),
+        "track_state": c.states.get('track'),
+        "is_alive": c.is_alive,
+        "current_position": c.get_current_position(),
+        "current_joints": c.get_current_joints(),
+        "last_error": c.last_error,
+    }
+
+@app.get("/status/performance")
+async def get_performance_status():
+    """Get detailed performance and maintenance status (hardware only)."""
+    c = get_controller()
+    if c.simulation_mode:
+        raise HTTPException(status_code=400, detail="Performance monitoring is not available in simulation mode.")
+    return {
+        "performance_metrics": c.get_performance_metrics(),
+        "maintenance_status": c.get_maintenance_status(),
+    }
 
 @app.get("/locations")
 async def get_locations():
-    """Get all named locations from config"""
+    """Get all named arm locations from the location config file."""
     try:
-        # Create a temporary controller just to read locations
-        from .xarm_controller import XArmController
-        temp_controller = XArmController(
-            config_path='src/settings/', 
-            simulation_mode=True, 
-            auto_enable=False
-        )
-        locations = temp_controller.get_named_locations()
+        location_config_path = os.path.join('src', 'settings', 'location_config.yaml')
+        location_config = load_config(location_config_path)
+        locations = list(location_config.get('locations', {}).keys())
         return {"locations": locations}
+    except FileNotFoundError:
+        logger.warning("location_config.yaml not found, returning empty list for locations.")
+        return {"locations": []}
     except Exception as e:
-        logger.error(f"Get locations failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Get locations failed: {str(e)}")
+        logger.error(f"Get arm locations failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Get arm locations failed: {str(e)}")
 
 # Movement endpoints
 @app.post("/move/position")
 async def move_to_position(request: PositionRequest, background_tasks: BackgroundTasks):
-    """Move robot to specified Cartesian position"""
-    ctrl = get_controller()
-    
-    try:
-        result = ctrl.move_to_position(
-            x=request.x,
-            y=request.y,
-            z=request.z,
-            roll=request.roll,
-            pitch=request.pitch,
-            yaw=request.yaw,
+    """Move the robot to a specific Cartesian position."""
+    c = get_controller()
+
+    async def move_task():
+        success = c.move_to_position(
+            x=request.x, y=request.y, z=request.z,
+            roll=request.roll, pitch=request.pitch, yaw=request.yaw,
             speed=request.speed,
+            check_collision=request.check_collision,
             wait=request.wait
         )
-        
-        if result:
-            background_tasks.add_task(broadcast_status_update)
-            return {
-                "message": "Movement completed successfully",
-                "position": {"x": request.x, "y": request.y, "z": request.z},
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Movement failed")
-            
-    except Exception as e:
-        logger.error(f"Movement failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Movement failed: {str(e)}")
+        if not success:
+            logger.error("Failed to move to position.")
+        await broadcast_status_update()
+
+    background_tasks.add_task(move_task)
+    return {"message": "Move to position command accepted."}
 
 @app.post("/move/joints")
 async def move_joints(request: JointRequest, background_tasks: BackgroundTasks):
-    """Move robot joints to specified angles"""
-    ctrl = get_controller()
-    
-    try:
-        # Validate joint count
-        if len(request.angles) != ctrl.num_joints:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Invalid joint count. Expected {ctrl.num_joints}, got {len(request.angles)}"
-            )
-        
-        result = ctrl.move_joints(
+    """Move the robot to a specific joint configuration."""
+    c = get_controller()
+
+    async def move_task():
+        success = c.move_joints(
             angles=request.angles,
             speed=request.speed,
             acceleration=request.acceleration,
+            check_collision=request.check_collision,
             wait=request.wait
         )
-        
-        if result:
-            background_tasks.add_task(broadcast_status_update)
-            return {
-                "message": "Joint movement completed successfully",
-                "angles": request.angles,
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Joint movement failed")
-            
-    except Exception as e:
-        logger.error(f"Joint movement failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Joint movement failed: {str(e)}")
+        if not success:
+            logger.error("Failed to move joints.")
+        await broadcast_status_update()
+    
+    background_tasks.add_task(move_task)
+    return {"message": "Move joints command accepted."}
 
 @app.post("/move/relative")
 async def move_relative(request: RelativeRequest, background_tasks: BackgroundTasks):
-    """Move robot relative to current position"""
-    ctrl = get_controller()
-    
-    try:
-        result = ctrl.move_relative(
-            dx=request.dx,
-            dy=request.dy,
-            dz=request.dz,
-            droll=request.droll,
-            dpitch=request.dpitch,
-            dyaw=request.dyaw,
-            speed=request.speed
+    """Move the robot relative to its current position."""
+    c = get_controller()
+
+    async def move_task():
+        success = c.move_relative(
+            dx=request.dx, dy=request.dy, dz=request.dz,
+            droll=request.droll, dpitch=request.dpitch, dyaw=request.dyaw,
+            speed=request.speed,
+            check_collision=request.check_collision,
+            wait=request.wait
         )
-        
-        if result:
-            background_tasks.add_task(broadcast_status_update)
-            return {
-                "message": "Relative movement completed successfully",
-                "delta": {
-                    "dx": request.dx, "dy": request.dy, "dz": request.dz,
-                    "droll": request.droll, "dpitch": request.dpitch, "dyaw": request.dyaw
-                },
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Relative movement failed")
-            
-    except Exception as e:
-        logger.error(f"Relative movement failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Relative movement failed: {str(e)}")
+        if not success:
+            logger.error("Failed to move relative.")
+        await broadcast_status_update()
+
+    background_tasks.add_task(move_task)
+    return {"message": "Move relative command accepted."}
 
 @app.post("/move/location")
 async def move_to_location(request: LocationRequest, background_tasks: BackgroundTasks):
-    """Move robot to named location"""
-    ctrl = get_controller()
-    
-    try:
-        result = ctrl.move_to_named_location(
+    """Move the robot to a pre-defined named location."""
+    c = get_controller()
+
+    async def move_task():
+        success = c.move_to_named_location(
             location_name=request.location_name,
-            speed=request.speed
+            speed=request.speed,
+            check_collision=request.check_collision,
+            wait=request.wait
         )
-        
-        if result:
-            background_tasks.add_task(broadcast_status_update)
-            return {
-                "message": f"Successfully moved to location '{request.location_name}'",
-                "location": request.location_name,
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Location movement failed")
-            
-    except Exception as e:
-        logger.error(f"Location movement failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Location movement failed: {str(e)}")
+        if not success:
+            logger.error(f"Failed to move to named location: {request.location_name}")
+        await broadcast_status_update()
+    
+    background_tasks.add_task(move_task)
+    return {"message": f"Move to location '{request.location_name}' command accepted."}
 
 @app.post("/move/home")
 async def move_home(background_tasks: BackgroundTasks):
@@ -436,19 +514,16 @@ async def move_home(background_tasks: BackgroundTasks):
 
 @app.post("/move/stop")
 async def stop_movement(background_tasks: BackgroundTasks):
-    """Stop all robot movement"""
-    ctrl = get_controller()
-    
-    try:
-        result = ctrl.stop_motion()
-        background_tasks.add_task(broadcast_status_update)
-        return {
-            "message": "Movement stopped successfully",
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Stop movement failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Stop movement failed: {str(e)}")
+    """Stop all robot motion immediately."""
+    c = get_controller()
+
+    async def stop_task():
+        c.stop_motion()
+        logger.info("Stop command issued.")
+        await broadcast_status_update()
+
+    background_tasks.add_task(stop_task)
+    return {"message": "Stop command accepted."}
 
 @app.post("/clear/errors")
 async def clear_errors(background_tasks: BackgroundTasks):
@@ -471,129 +546,140 @@ async def clear_errors(background_tasks: BackgroundTasks):
         logger.error(f"Clear errors failed: {e}")
         raise HTTPException(status_code=500, detail=f"Clear errors failed: {str(e)}")
 
+@app.post("/component/enable")
+async def enable_component(request: ComponentRequest):
+    """Enable a specific component (gripper or track)."""
+    c = get_controller()
+    component = request.component.lower()
+    success = False
+    if component == 'gripper':
+        success = c.enable_gripper_component()
+    elif component == 'track':
+        success = c.enable_track_component()
+    else:
+        raise HTTPException(status_code=400, detail="Invalid component specified. Use 'gripper' or 'track'.")
+    
+    await broadcast_status_update()
+    if success:
+        return {"message": f"Component '{component}' enabled successfully."}
+    else:
+        raise HTTPException(status_code=500, detail=f"Failed to enable component '{component}'.")
+
+@app.post("/component/disable")
+async def disable_component(request: ComponentRequest):
+    """Disable a specific component (gripper or track)."""
+    c = get_controller()
+    component = request.component.lower()
+    success = False
+    if component == 'gripper':
+        success = c.disable_gripper_component()
+    elif component == 'track':
+        success = c.disable_track_component()
+    else:
+        raise HTTPException(status_code=400, detail="Invalid component specified. Use 'gripper' or 'track'.")
+
+    await broadcast_status_update()
+    if success:
+        return {"message": f"Component '{component}' disabled successfully."}
+    else:
+        raise HTTPException(status_code=500, detail=f"Failed to disable component '{component}'.")
+
 @app.post("/velocity/cartesian")
 async def set_cartesian_velocity(request: VelocityRequest):
-    """Set Cartesian velocity for continuous movement"""
-    ctrl = get_controller()
+    """Set the Cartesian velocity of the robot arm."""
+    c = get_controller()
+    velocities = [request.vx, request.vy, request.vz, request.vroll, request.vpitch, request.vyaw]
     
-    try:
-        result = ctrl.set_cartesian_velocity(
-            vx=request.vx,
-            vy=request.vy,
-            vz=request.vz,
-            vroll=request.vroll,
-            vpitch=request.vpitch,
-            vyaw=request.vyaw
-        )
-        
-        return {
-            "message": "Cartesian velocity set successfully",
-            "velocity": {
-                "vx": request.vx, "vy": request.vy, "vz": request.vz,
-                "vroll": request.vroll, "vpitch": request.vpitch, "vyaw": request.vyaw
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Set velocity failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Set velocity failed: {str(e)}")
+    if not c.set_cartesian_velocity(velocities):
+        raise HTTPException(status_code=500, detail="Failed to set Cartesian velocity.")
+    
+    return {"message": "Cartesian velocity set successfully."}
 
 # Gripper endpoints
 @app.post("/gripper/open")
 async def open_gripper(request: GripperRequest, background_tasks: BackgroundTasks):
-    """Open the gripper"""
-    ctrl = get_controller()
-    
-    if not ctrl.has_gripper():
-        raise HTTPException(status_code=400, detail="No gripper configured")
-    
-    try:
-        result = ctrl.open_gripper(speed=request.speed, wait=request.wait)
-        
-        if result:
-            background_tasks.add_task(broadcast_status_update)
-            return {
-                "message": "Gripper opened successfully",
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to open gripper")
-            
-    except Exception as e:
-        logger.error(f"Open gripper failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Open gripper failed: {str(e)}")
+    """Open the attached gripper."""
+    c = get_controller()
+
+    async def gripper_task():
+        success = c.open_gripper(speed=request.speed, wait=request.wait)
+        if not success:
+            logger.error("Failed to open gripper.")
+        await broadcast_status_update()
+
+    background_tasks.add_task(gripper_task)
+    return {"message": "Open gripper command accepted."}
 
 @app.post("/gripper/close")
 async def close_gripper(request: GripperRequest, background_tasks: BackgroundTasks):
-    """Close the gripper"""
-    ctrl = get_controller()
+    """Close the attached gripper."""
+    c = get_controller()
+
+    async def gripper_task():
+        success = c.close_gripper(speed=request.speed, wait=request.wait)
+        if not success:
+            logger.error("Failed to close gripper.")
+        await broadcast_status_update()
     
-    if not ctrl.has_gripper():
-        raise HTTPException(status_code=400, detail="No gripper configured")
-    
-    try:
-        result = ctrl.close_gripper(speed=request.speed, wait=request.wait)
-        
-        if result:
-            background_tasks.add_task(broadcast_status_update)
-            return {
-                "message": "Gripper closed successfully",
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to close gripper")
-            
-    except Exception as e:
-        logger.error(f"Close gripper failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Close gripper failed: {str(e)}")
+    background_tasks.add_task(gripper_task)
+    return {"message": "Close gripper command accepted."}
 
 # Linear track endpoints
 @app.post("/track/move")
 async def move_track(request: TrackRequest, background_tasks: BackgroundTasks):
-    """Move linear track to position"""
-    ctrl = get_controller()
-    
-    if not ctrl.has_track():
-        raise HTTPException(status_code=400, detail="No linear track configured")
-    
-    try:
-        result = ctrl.move_track_to_position(
-            position=request.position,
+    """Move the linear track to a specific position."""
+    c = get_controller()
+
+    async def track_task():
+        success = c.move_track_to_position(position=request.position, speed=request.speed, wait=request.wait)
+        if not success:
+            logger.error("Failed to move linear track.")
+        await broadcast_status_update()
+
+    background_tasks.add_task(track_task)
+    return {"message": "Move track command accepted."}
+
+@app.post("/track/move/location")
+async def move_track_to_location(request: TrackLocationRequest, background_tasks: BackgroundTasks):
+    """Move the linear track to a pre-configured named location."""
+    c = get_controller()
+
+    async def track_task():
+        success = c.move_track_to_named_location(
+            location_name=request.location_name,
             speed=request.speed,
             wait=request.wait
         )
-        
-        if result:
-            background_tasks.add_task(broadcast_status_update)
-            return {
-                "message": "Track moved successfully",
-                "position": request.position,
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to move track")
-            
-    except Exception as e:
-        logger.error(f"Move track failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Move track failed: {str(e)}")
+        if not success:
+            logger.error(f"Failed to move track to named location: {request.location_name}")
+        await broadcast_status_update()
+
+    background_tasks.add_task(track_task)
+    return {"message": f"Move track to location '{request.location_name}' command accepted."}
 
 @app.get("/track/position")
 async def get_track_position():
     """Get current linear track position"""
-    ctrl = get_controller()
+    c = get_controller()
     
-    if not ctrl.has_track():
-        raise HTTPException(status_code=400, detail="No linear track configured")
-    
+    if not c.has_track():
+        raise HTTPException(status_code=400, detail="Linear track is not enabled.")
+    return {"position": c.get_track_position()}
+
+@app.get("/track/locations")
+async def get_track_locations():
+    """Get a list of all available named locations for the linear track from its config file."""
     try:
-        position = ctrl.get_track_position()
-        return {
-            "position": position,
-            "timestamp": datetime.now().isoformat()
-        }
+        track_config_path = os.path.join('src', 'settings', 'linear_track_config.yaml')
+        track_config = load_config(track_config_path)
+        locations = list(track_config.get('locations', {}).keys())
+        return {"locations": locations}
+    except FileNotFoundError:
+        logger.warning("linear_track_config.yaml not found, returning empty list for track locations.")
+        return {"locations": []}
     except Exception as e:
-        logger.error(f"Get track position failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Get track position failed: {str(e)}")
+        logger.error(f"Get track locations failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Get track locations failed: {str(e)}")
 
 # WebSocket endpoint for real-time updates
 @app.websocket("/ws")
@@ -601,17 +687,11 @@ async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time status updates"""
     await manager.connect(websocket)
     try:
-        # Send initial status
+        # Send initial status on connect
         await broadcast_status_update()
-        
         while True:
-            # Keep connection alive and listen for client messages
+            # Keep connection alive, listen for messages if needed
             data = await websocket.receive_text()
-            
-            # Handle client requests (e.g., status updates)
-            if data == "status":
-                await broadcast_status_update()
-                
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
@@ -620,10 +700,31 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # Development server
 if __name__ == "__main__":
-    uvicorn.run(
-        "xarm_api_server:app",
-        host="0.0.0.0",
-        port=6001,
-        reload=True,
-        log_level="info"
-    ) 
+    # Get host and port from environment variables or use defaults
+    host = os.environ.get("XARM_API_HOST", "0.0.0.0")
+    port = int(os.environ.get("XARM_API_PORT", 6001))
+    
+    logger.info(f"Starting server on {host}:{port}")
+    
+    # Example of how to connect automatically on startup (optional)
+    # This can be useful for development or dedicated server setups
+    # Note: In a real production scenario, you might want to handle
+    # connection via API calls for better control.
+    
+    # async def startup_connect():
+    #     global controller
+    #     logger.info("Attempting to auto-connect on startup...")
+    #     try:
+    #         controller = XArmController(auto_enable=True)
+    #         if not controller.initialize():
+    #             logger.error("Auto-connect failed during initialization.")
+    #             controller = None
+    #         else:
+    #             logger.info("Auto-connect successful.")
+    #     except Exception as e:
+    #         logger.error(f"Auto-connect failed with exception: {e}")
+    #         controller = None
+
+    # app.add_event_handler("startup", startup_connect)
+    
+    uvicorn.run(app, host=host, port=port) 

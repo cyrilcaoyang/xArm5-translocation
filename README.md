@@ -72,11 +72,11 @@ conda run -n sdl2-robots python src/xarm_api_server.py
 
 For detailed guides on specific topics, please see the `docs/` directory:
 
+-   **[Features Overview](./docs/FEATURES.md)**: A high-level overview of the controller's features.
 -   **[API Reference](./docs/API_REFERENCE.md)**: Detailed documentation of the `XArmController` methods and parameters.
--   **[Docker Testing Guide](./docs/TESTING_WITH_DOCKER.md)**: Comprehensive guide for testing with the UFACTORY simulator using Docker (local or remote).
 -   **[Simulation Guide](./docs/README_SIMULATION.md)**: A guide to the software-only simulation mode.
--   **[Features Overview](./docs/XARM_FEATURES.md)**: A high-level overview of the controller's features.
 -   **[Testing Guide](./docs/TESTING.md)**: An overview of the project's testing strategy.
+-   **[Docker Testing Guide](./docs/TESTING_WITH_DOCKER.md)**: Comprehensive guide for testing with the UFACTORY simulator using Docker (local or remote).
 
 ## 🔧 Advanced Features
 

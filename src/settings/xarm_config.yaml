@@ -1,0 +1,34 @@
+# Default profile to use if none is specified
+default_profile: 'real_hw'
+
+# Connection profiles
+profiles:
+  real_hw:
+    model: 5
+    num_joints: 5
+    host: '192.168.1.237'
+    port: 18333
+    tcp_speed: 100
+    tcp_acc: 2000
+    angle_speed: 20
+    angle_acc: 500
+
+  docker_local:
+    model: 5
+    num_joints: 5
+    host: '127.0.0.1'
+    port: 18333
+    tcp_speed: 100
+    tcp_acc: 2000
+    angle_speed: 20
+    angle_acc: 500
+
+  docker_remote:
+    model: 5
+    num_joints: 5
+    host: '100.64.254.6'
+    port: 18333
+    tcp_speed: 100
+    tcp_acc: 2000
+    angle_speed: 20
+    angle_acc: 500 
