@@ -10,9 +10,6 @@ Additionally, it tests the gripper with open/close operations.
 Usage:
     python demo_5joints.py --simulate     # Run in simulation mode
     python demo_5joints.py --real         # Connect to real robot hardware
-
-Author: AI Assistant
-Created: 2024
 """
 
 import os
