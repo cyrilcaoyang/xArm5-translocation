@@ -51,7 +51,7 @@ src/docker/docker_setup.sh start 7
 python src/examples/demo_docker_sim.py
 ```
 
-For detailed instructions on simulation and hardware setup, see the [Simulation README](src/settings/README_SIMULATION.md).
+For detailed instructions on simulation and hardware setup, see the [Simulation README](docs/SIMULATION_TESTING.md).
 
 ### API Server
 ```bash
