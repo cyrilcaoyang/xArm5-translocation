@@ -576,21 +576,20 @@ def validate_and_apply_safety_config(user_config: Dict[str, Any]) -> Dict[str, A
     return validated_config
 
 def get_safety_speed_limits(safety_level: SafetyLevel, max_tcp_speed: int = 1000, max_joint_speed: int = 180) -> Tuple[int, int]:
-    """
-    Calculate speed limits based on safety level.
+    """Calculate speed limits based on safety level."""
+    SAFETY_LEVEL_MULTIPLIERS = {
+        'EMERGENCY': 0.1,
+        'HIGH': 0.25,
+        'MEDIUM': 0.5,
+        'LOW': 1.0
+    }
     
-    Args:
-        safety_level: Safety level enum
-        max_tcp_speed: Maximum TCP speed from config
-        max_joint_speed: Maximum joint speed from config
-        
-    Returns:
-        Tuple of (tcp_speed_limit, joint_speed_limit)
-    """
-    multiplier = SAFETY_LEVEL_MULTIPLIERS[safety_level]
-    tcp_limit = int(max_tcp_speed * multiplier)
-    joint_limit = int(max_joint_speed * multiplier)
-    return tcp_limit, joint_limit
+    multiplier = SAFETY_LEVEL_MULTIPLIERS.get(safety_level.name, 0.5)
+
+    safe_tcp_speed = int(max_tcp_speed * multiplier)
+    safe_joint_speed = int(max_joint_speed * multiplier)
+    
+    return safe_tcp_speed, safe_joint_speed
 
 
 def apply_movement_parameter_limits(tcp_speed: float, tcp_acc: float, angle_speed: float, angle_acc: float, 
@@ -654,7 +653,7 @@ def check_operation_result(code: int, operation_name: str, arm_state: Optional[i
     Check if an operation was successful and handle errors.
     
     Args:
-        code: Return code from operation
+        code: Return code from operation (None or 0 typically means success)
         operation_name: Name of the operation for logging
         arm_state: Current arm state (optional)
         error_code: Current error code (optional)
@@ -664,9 +663,11 @@ def check_operation_result(code: int, operation_name: str, arm_state: Optional[i
         True if operation was successful, False otherwise
     """
     if is_simulation:
-        # In simulation mode, assume success if code is 0
-        return code == 0
+        # In simulation mode, assume success if code is 0 or None
+        return code == 0 or code is None
     
-    if code != 0:
-        return check_return_code(code, operation_name, arm_state, error_code)
-    return True 
+    # For xArm SDK, None or 0 typically indicates success
+    if code is None or code == 0:
+        return True
+        
+    return check_return_code(code, operation_name, arm_state, error_code) 

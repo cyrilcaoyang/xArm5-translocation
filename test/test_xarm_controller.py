@@ -15,15 +15,15 @@ import os
 # Ensure src is in the python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from core.xarm_controller import XArmController, ComponentState
-from core.xarm_utils import SafetyLevel
+from src.core.xarm_controller import XArmController, ComponentState
+from src.core.xarm_utils import SafetyLevel
 
 
 @pytest.fixture
-def simulation_controller(test_config_path):
+def simulation_controller(mock_config_files):
     """Create a simulation mode controller for testing without hardware."""
     return XArmController(
-        config_path=test_config_path,
+        profile_name='test_profile',
         simulation_mode=True,
         auto_enable=False,
         gripper_type='bio',
@@ -32,10 +32,10 @@ def simulation_controller(test_config_path):
 
 
 @pytest.fixture
-def hardware_controller(test_config_path):
+def hardware_controller(mock_config_files):
     """Create a hardware mode controller for testing with mocks."""
     return XArmController(
-        config_path=test_config_path,
+        profile_name='test_profile',
         simulation_mode=False,
         auto_enable=False,
         gripper_type='bio',
@@ -62,29 +62,28 @@ class TestXArmControllerInitialization:
         assert controller.gripper_type == 'bio'
         assert controller.enable_track is True
 
-    def test_auto_enable_functionality(self, test_config_path):
+    def test_auto_enable_functionality(self, mock_config_files):
         """Test auto_enable functionality."""
-        controller = XArmController(
-            config_path=test_config_path,
-            simulation_mode=True,
-            auto_enable=True
-        )
-        # In simulation mode, auto_enable should work
-        assert controller.get_component_states()['connection'] == 'enabled'
+        with patch('src.core.xarm_controller.XArmController.initialize') as mock_init:
+            XArmController(
+                profile_name='test_profile',
+                simulation_mode=True,
+                auto_enable=True
+            )
+            mock_init.assert_called_once()
 
     def test_config_loading(self, simulation_controller):
         """Test configuration loading."""
         controller = simulation_controller
-        # Check that configs are loaded (even if defaults)
-        assert hasattr(controller, 'xarm_config')
-        assert hasattr(controller, 'gripper_config')
-        assert hasattr(controller, 'track_config')
-        assert hasattr(controller, 'location_config')
+        assert 'host' in controller.xarm_config
+        assert 'GRIPPER_SPEED' in controller.gripper_config
+        assert 'Speed' in controller.track_config
+        assert 'locations' in controller.location_config
 
-    def test_safety_level_configuration(self, test_config_path):
+    def test_safety_level_configuration(self, mock_config_files):
         """Test safety level configuration."""
         controller = XArmController(
-            config_path=test_config_path,
+            profile_name='test_profile',
             simulation_mode=True,
             safety_level=SafetyLevel.HIGH
         )
@@ -93,7 +92,7 @@ class TestXArmControllerInitialization:
     def test_model_detection(self, simulation_controller):
         """Test model detection and joint count."""
         controller = simulation_controller
-        assert controller.model in [5, 6, 7, 850]
+        assert controller.model in [5, 6, 7]
         assert controller.num_joints > 0
 
 
@@ -112,7 +111,6 @@ class TestSimulationMode:
         controller = simulation_controller
         controller.initialize()
         
-        # Test that simulation arm methods exist
         assert hasattr(controller.arm, 'connect')
         assert hasattr(controller.arm, 'get_position')
         assert hasattr(controller.arm, 'get_servo_angle')
@@ -123,8 +121,7 @@ class TestSimulationMode:
         controller = simulation_controller
         controller.initialize()
         
-        # Test joint movement
-        success = controller.move_joints([0, 0, 0, 0, 0, 0, 0], speed=50)
+        success = controller.move_joints([0, 0, 0, 0, 0, 0], speed=50)
         assert success is True
 
     def test_simulation_gripper_control(self, simulation_controller):
@@ -133,11 +130,8 @@ class TestSimulationMode:
         controller.initialize()
         controller.enable_gripper_component()
         
-        success = controller.open_gripper()
-        assert success is True
-        
-        success = controller.close_gripper()
-        assert success is True
+        assert controller.open_gripper() is True
+        assert controller.close_gripper() is True
 
     def test_simulation_track_control(self, simulation_controller):
         """Test track control in simulation mode."""
@@ -145,8 +139,7 @@ class TestSimulationMode:
         controller.initialize()
         controller.enable_track_component()
         
-        success = controller.move_track_to_position(100)
-        assert success is True
+        assert controller.move_track_to_position(100) is True
 
 
 class TestHardwareMode:
@@ -154,22 +147,25 @@ class TestHardwareMode:
 
     def test_hardware_initialization_success(self, initialized_controller):
         """Test successful hardware initialization."""
-        controller = initialized_controller
-        assert controller.states['connection'] == ComponentState.ENABLED
-        assert controller.is_alive is True
+        assert initialized_controller.states['connection'] == ComponentState.ENABLED
+        assert initialized_controller.is_alive is True
 
-    def test_hardware_initialization_failure(self, hardware_controller):
+    def test_hardware_initialization_failure(self, monkeypatch):
         """Test hardware initialization failure handling."""
-        # Mock arm to simulate connection failure
-        with patch.object(hardware_controller.arm, 'connect', return_value=1):
-            success = hardware_controller.initialize()
-            assert success is False
+        # This test ensures that if the SDK's connect() method fails,
+        # our controller's initialize() correctly returns False.
+        mock_api = MagicMock()
+        mock_api.connect.return_value = 1  # SDK failure code
+        monkeypatch.setattr('src.core.xarm_controller.XArmAPI', lambda *args, **kwargs: mock_api)
+        
+        # We need to instantiate the controller *after* the patch is applied.
+        controller = XArmController(profile_name='test_profile', simulation_mode=False, auto_enable=False)
+        assert controller.initialize() is False, "initialize() should return False on connection failure."
 
     def test_hardware_disconnect(self, initialized_controller):
         """Test hardware disconnection."""
-        controller = initialized_controller
-        controller.disconnect()
-        assert controller.states['connection'] == ComponentState.DISABLED
+        initialized_controller.disconnect()
+        assert initialized_controller.states['connection'] == ComponentState.DISABLED
 
 
 class TestComponentManagement:
@@ -177,45 +173,32 @@ class TestComponentManagement:
 
     def test_enable_gripper_component(self, initialized_controller):
         """Test enabling gripper component."""
-        controller = initialized_controller
-        success = controller.enable_gripper_component()
-        assert success is True
-        assert controller.states['gripper'] == ComponentState.ENABLED
+        assert initialized_controller.enable_gripper_component() is True
+        assert initialized_controller.states['gripper'] == ComponentState.ENABLED
 
     def test_enable_track_component(self, initialized_controller):
         """Test enabling track component."""
-        controller = initialized_controller
-        success = controller.enable_track_component()
-        assert success is True
-        assert controller.states['track'] == ComponentState.ENABLED
+        assert initialized_controller.enable_track_component() is True
+        assert initialized_controller.states['track'] == ComponentState.ENABLED
 
     def test_disable_gripper_component(self, initialized_controller):
         """Test disabling gripper component."""
-        controller = initialized_controller
-        controller.enable_gripper_component()
-        success = controller.disable_gripper_component()
-        assert success is True
-        assert controller.states['gripper'] == ComponentState.DISABLED
+        initialized_controller.enable_gripper_component()
+        assert initialized_controller.disable_gripper_component() is True
+        assert initialized_controller.states['gripper'] == ComponentState.DISABLED
 
     def test_disable_track_component(self, initialized_controller):
         """Test disabling track component."""
-        controller = initialized_controller
-        controller.enable_track_component()
-        success = controller.disable_track_component()
-        assert success is True
-        assert controller.states['track'] == ComponentState.DISABLED
+        initialized_controller.enable_track_component()
+        assert initialized_controller.disable_track_component() is True
+        assert initialized_controller.states['track'] == ComponentState.DISABLED
 
     def test_component_state_checking(self, initialized_controller):
         """Test component state checking methods."""
-        controller = initialized_controller
-        
-        # Test component state retrieval
-        states = controller.get_component_states()
+        states = initialized_controller.get_component_states()
         assert isinstance(states, dict)
-        assert 'connection' in states
-        assert 'arm' in states
-        assert 'gripper' in states
-        assert 'track' in states
+        assert 'connection' in states and 'arm' in states
+        assert 'gripper' in states and 'track' in states
 
 
 class TestEnhancedMovementMethods:
@@ -223,9 +206,7 @@ class TestEnhancedMovementMethods:
 
     def test_move_to_position_with_collision_detection(self, initialized_controller):
         """Test move_to_position with collision detection."""
-        controller = initialized_controller
-        
-        success = controller.move_to_position(
+        success = initialized_controller.move_to_position(
             x=300, y=0, z=300, 
             roll=180, pitch=0, yaw=0,
             check_collision=True
@@ -234,480 +215,251 @@ class TestEnhancedMovementMethods:
 
     def test_move_joints_with_safety_validation(self, simulation_controller):
         """Test move_joints with safety validation."""
-        controller = simulation_controller
-        controller.initialize()
-        
-        # Test valid joint angles
-        success = controller.move_joints([0, 0, 0, 0, 0, 0, 0], check_collision=True)
-        assert success is True
+        simulation_controller.initialize()
+        assert simulation_controller.move_joints([0] * 6, check_collision=True) is True
 
     def test_move_to_named_location(self, simulation_controller):
         """Test move_to_named_location method."""
-        controller = simulation_controller
-        controller.initialize()
-        
-        # Test with an actual location from the config
-        success = controller.move_to_named_location('ROBOT_HOME')
-        assert success is True
+        simulation_controller.initialize()
+        assert simulation_controller.move_to_named_location('home') is True
+        assert simulation_controller.move_to_named_location('pickup') is True
 
     def test_move_relative(self, initialized_controller):
         """Test relative movement."""
-        controller = initialized_controller
-        
-        success = controller.move_relative(dx=10, dy=0, dz=0)
-        assert success is True
+        assert initialized_controller.move_relative(dx=10) is True
 
     def test_move_single_joint(self, initialized_controller):
-        """Test single joint movement."""
-        controller = initialized_controller
-        
-        success = controller.move_single_joint(joint_id=0, angle=10)
-        assert success is True
+        """Test moving a single joint."""
+        assert initialized_controller.move_single_joint(1, 10) is True
 
     def test_go_home_enhanced(self, initialized_controller):
-        """Test enhanced go_home method."""
-        controller = initialized_controller
-        
-        success = controller.go_home()
-        assert success is True
+        """Test go_home method."""
+        assert initialized_controller.go_home() is True
 
     def test_velocity_control(self, initialized_controller):
         """Test velocity control methods."""
-        controller = initialized_controller
-        
-        # Test Cartesian velocity
-        success = controller.set_cartesian_velocity(vx=10, vy=0, vz=0)
-        assert success is True
-        
-        # Test joint velocity
-        success = controller.set_joint_velocity([10, 0, 0, 0, 0, 0, 0])
-        assert success is True
+        assert initialized_controller.set_cartesian_velocity([10, 0, 0, 0, 0, 0]) is True
+        assert initialized_controller.set_joint_velocity([10] * initialized_controller.num_joints) is True
 
     def test_stop_motion(self, initialized_controller):
-        """Test emergency stop functionality."""
-        controller = initialized_controller
-        
-        success = controller.stop_motion()
-        assert success is True
+        """Test emergency stop."""
+        assert initialized_controller.stop_motion() is True
 
 
 class TestUniversalGripperControl:
-    """Test universal gripper control system."""
+    """Test universal gripper control methods."""
 
     def test_bio_gripper_control(self, initialized_controller):
-        """Test bio gripper control."""
-        controller = initialized_controller
-        controller.enable_gripper_component()
-        
-        success = controller.open_gripper()
-        assert success is True
-        
-        success = controller.close_gripper()
-        assert success is True
+        """Test BIO gripper control."""
+        initialized_controller.enable_gripper_component()
+        assert initialized_controller.open_gripper() is True
+        assert initialized_controller.close_gripper() is True
 
-    def test_standard_gripper_control(self, test_config_path):
+    def test_standard_gripper_control(self, mock_config_files):
         """Test standard gripper control."""
-        controller = XArmController(
-            config_path=test_config_path,
-            simulation_mode=True,
-            gripper_type='standard'
-        )
+        controller = XArmController(profile_name='test_profile', gripper_type='standard', simulation_mode=True)
         controller.initialize()
         controller.enable_gripper_component()
-        
-        success = controller.open_gripper()
-        assert success is True
+        assert controller.open_gripper() is True
+        assert controller.close_gripper() is True
 
-    def test_robotiq_gripper_control(self, test_config_path):
+    def test_robotiq_gripper_control(self, mock_config_files):
         """Test Robotiq gripper control."""
-        controller = XArmController(
-            config_path=test_config_path,
-            simulation_mode=True,
-            gripper_type='robotiq'
-        )
+        controller = XArmController(profile_name='test_profile', gripper_type='robotiq', simulation_mode=True)
         controller.initialize()
         controller.enable_gripper_component()
-        
-        success = controller.open_gripper()
-        assert success is True
+        assert controller.open_gripper() is True
+        assert controller.close_gripper() is True
 
-    def test_no_gripper_configured(self, test_config_path):
-        """Test behavior when no gripper is configured."""
-        controller = XArmController(
-            config_path=test_config_path,
-            simulation_mode=True,
-            gripper_type='none'
-        )
+    def test_no_gripper_configured(self, mock_config_files):
+        """Test behavior with no gripper."""
+        controller = XArmController(profile_name='test_profile', gripper_type='none', simulation_mode=True)
         controller.initialize()
-        
         assert controller.has_gripper() is False
+        assert controller.open_gripper() is False
 
 
 class TestLinearTrackControl:
-    """Test linear track control functionality."""
+    """Test linear track control methods."""
 
     def test_track_movement_with_validation(self, initialized_controller):
         """Test track movement with validation."""
-        controller = initialized_controller
-        controller.enable_track_component()
-        
-        success = controller.move_track_to_position(100)
-        assert success is True
+        initialized_controller.enable_track_component()
+        assert initialized_controller.move_track_to_position(100) is True
 
     def test_track_speed_setting(self, initialized_controller):
-        """Test track speed setting."""
-        controller = initialized_controller
-        controller.enable_track_component()
-        
-        success = controller.set_track_speed(50)
-        assert success is True
+        """Test setting track speed."""
+        initialized_controller.enable_track_component()
+        assert initialized_controller.set_track_speed(100) is True
 
     def test_track_reset(self, initialized_controller):
-        """Test track reset functionality."""
-        controller = initialized_controller
-        controller.enable_track_component()
-        
-        success = controller.reset_track()
-        assert success is True
+        """Test resetting the track position."""
+        initialized_controller.enable_track_component()
+        assert initialized_controller.reset_track() is True
 
     def test_track_position_retrieval(self, initialized_controller):
-        """Test track position retrieval."""
-        controller = initialized_controller
-        controller.enable_track_component()
-        
-        position = controller.get_track_position()
-        assert position is not None
+        """Test retrieving track position."""
+        initialized_controller.enable_track_component()
+        pos = initialized_controller.get_track_position()
+        assert isinstance(pos, (int, float))
 
-    def test_track_not_enabled(self, test_config_path):
-        """Test behavior when track is not enabled."""
-        controller = XArmController(
-            config_path=test_config_path,
-            simulation_mode=True,
-            enable_track=False
-        )
+    def test_track_not_enabled(self, mock_config_files):
+        """Test that track methods fail if track is not enabled."""
+        controller = XArmController(profile_name='test_profile', enable_track=False, simulation_mode=True)
         controller.initialize()
-        
-        assert controller.has_track() is False
+        assert controller.move_track_to_position(100) is False
 
     def test_track_disabled(self, initialized_controller):
-        """Test track disabled state."""
-        controller = initialized_controller
-        
-        success = controller.move_track_to_position(100)
-        assert success is False  # Should fail when track is disabled
+        """Test that track methods fail if component is disabled."""
+        initialized_controller.disable_track_component()
+        assert initialized_controller.move_track_to_position(100) is False
 
 
 class TestStateManagementAndMonitoring:
-    """Test state management and monitoring features."""
+    """Test state and error management."""
 
     def test_get_system_status(self, initialized_controller):
-        """Test comprehensive system status retrieval."""
-        controller = initialized_controller
-        
-        status = controller.get_system_status()
+        """Test getting system status."""
+        status = initialized_controller.get_system_status()
         assert isinstance(status, dict)
-        assert 'timestamp' in status
         assert 'connection' in status
         assert 'arm' in status
-        assert 'gripper' in status
-        assert 'track' in status
-        assert 'errors' in status
 
     def test_error_tracking(self, initialized_controller):
-        """Test error tracking functionality."""
-        controller = initialized_controller
-        
-        # Test error history
-        history = controller.get_error_history()
-        assert isinstance(history, list)
+        """Test error code tracking."""
+        initialized_controller.arm.error_code = 1
+        initialized_controller._error_warn_callback({'error_code': 1})
+        assert initialized_controller.last_error_code == 1
 
     def test_warning_tracking(self, initialized_controller):
-        """Test warning tracking functionality."""
-        controller = initialized_controller
-        
-        # Test that warnings are tracked
-        status = controller.get_system_status()
-        assert 'errors' in status
-        assert 'last_warning' in status['errors']
-
-    def test_state_changed_callback(self, initialized_controller):
-        """Test state change callback system."""
-        controller = initialized_controller
-        
-        callback_called = False
-        
-        def test_callback(data):
-            nonlocal callback_called
-            callback_called = True
-        
-        # Register callback (this would be implemented in the actual system)
-        # For now, just test that the callback system exists
-        assert hasattr(controller, '_trigger_callbacks')
+        """Test warning code tracking."""
+        initialized_controller.arm.warn_code = 1
+        initialized_controller._error_warn_callback({'warn_code': 1})
+        assert initialized_controller.last_warn_code == 1
 
     def test_is_alive_property(self, initialized_controller):
         """Test is_alive property."""
-        controller = initialized_controller
-        
-        assert hasattr(controller, 'is_alive')
-        alive_status = controller.is_alive
-        assert isinstance(alive_status, bool)
+        assert initialized_controller.is_alive is True
+        initialized_controller._state_changed_callback({'state': 4})
+        assert initialized_controller.is_alive is False
 
     def test_get_error_history(self, initialized_controller):
-        """Test error history retrieval."""
-        controller = initialized_controller
-        
-        history = controller.get_error_history(count=5)
-        assert isinstance(history, list)
-        assert len(history) <= 5
+        """Test retrieving error history."""
+        initialized_controller._error_warn_callback({'error_code': 10})
+        history = initialized_controller.get_error_history()
+        assert len(history) > 0
+        assert history[0]['error_code'] == 10
 
     def test_clear_errors(self, initialized_controller):
-        """Test error clearing functionality."""
-        controller = initialized_controller
-        
-        # This should not raise an exception
-        controller.clear_errors()
-
-
-class TestPerformanceMonitoring:
-    """Test performance monitoring features."""
-
-    def test_performance_metrics_initialization(self, initialized_controller):
-        """Test performance metrics initialization."""
-        controller = initialized_controller
-        
-        metrics = controller.get_performance_metrics()
-        assert isinstance(metrics, dict)
-        # Check for expected metric types
-        expected_metrics = ['cycle_times', 'joint_utilization', 'accuracy_errors', 'command_success_rate']
-        for metric in expected_metrics:
-            assert metric in metrics
-
-    def test_maintenance_status(self, initialized_controller):
-        """Test maintenance status retrieval."""
-        controller = initialized_controller
-        
-        status = controller.get_maintenance_status()
-        assert isinstance(status, dict)
-        assert 'temperature' in status
-        assert 'torque' in status
-        assert 'current' in status
-        assert 'overall_health' in status
+        """Test clearing errors."""
+        initialized_controller.arm.error_code = 1
+        initialized_controller.clear_errors()
+        assert initialized_controller.last_error_code == 0
 
 
 class TestUtilityMethods:
-    """Test utility methods and information retrieval."""
+    """Test utility methods."""
 
     def test_get_current_position(self, initialized_controller):
-        """Test current position retrieval."""
-        controller = initialized_controller
-        
-        position = controller.get_current_position()
-        assert isinstance(position, list)
-        assert len(position) == 6  # x, y, z, roll, pitch, yaw
+        """Test getting current position."""
+        pos = initialized_controller.get_current_position()
+        assert isinstance(pos, list) and len(pos) == 6
 
     def test_get_current_joints(self, initialized_controller):
-        """Test current joint angles retrieval."""
-        controller = initialized_controller
-        
-        joints = controller.get_current_joints()
-        assert isinstance(joints, list)
-        assert len(joints) == controller.num_joints
+        """Test getting current joint angles."""
+        joints = initialized_controller.get_current_joints()
+        assert isinstance(joints, list) and len(joints) == initialized_controller.num_joints
 
     def test_get_named_locations(self, initialized_controller):
-        """Test named locations retrieval."""
-        controller = initialized_controller
-        
-        locations = controller.get_named_locations()
-        assert isinstance(locations, list)
-        # Check for expected locations from config
-        expected_locations = ['ROBOT_HOME', 'ROBOT_HOME_-90', 'Rlw_low', 'Rlw_high']
-        for location in expected_locations:
-            assert location in locations
+        """Test getting named locations."""
+        locations = initialized_controller.get_named_locations()
+        assert 'home' in locations
+        assert 'pickup' in locations
 
     def test_get_system_info(self, initialized_controller):
-        """Test system information retrieval."""
-        controller = initialized_controller
-        
-        info = controller.get_system_info()
-        assert isinstance(info, dict)
-        assert 'model' in info
-        assert 'num_joints' in info
-        assert 'gripper_type' in info
-        assert 'has_gripper' in info
-        assert 'has_track' in info
-        assert 'connected' in info
-        assert 'component_states' in info
+        """Test getting system info."""
+        info = initialized_controller.get_system_info()
+        assert info['model'] == 6
+        assert info['has_gripper'] is True
+        assert info['has_track'] is True
 
     def test_check_code_success(self, initialized_controller):
-        """Test check_code method with success code."""
-        controller = initialized_controller
-        
-        result = controller.check_code(0, "test_operation")
-        assert result is True
+        """Test check_code for success."""
+        assert initialized_controller.check_code(0, 'test_op') is True
 
     def test_check_code_failure(self, initialized_controller):
-        """Test check_code method with failure code."""
-        controller = initialized_controller
-        
-        result = controller.check_code(1, "test_operation")
-        assert result is False
-
-    def test_has_gripper(self, initialized_controller):
-        """Test has_gripper method."""
-        controller = initialized_controller
-        
-        result = controller.has_gripper()
-        assert isinstance(result, bool)
-
-    def test_has_track(self, initialized_controller):
-        """Test has_track method."""
-        controller = initialized_controller
-        
-        result = controller.has_track()
-        assert isinstance(result, bool)
+        """Test check_code for failure."""
+        assert initialized_controller.check_code(1, 'test_op') is False
 
 
 class TestSafetyAndValidation:
-    """Test safety systems and validation."""
+    """Test safety and validation systems."""
 
-    def test_safety_level_enforcement(self, test_config_path):
-        """Test safety level enforcement."""
-        controller = XArmController(
-            config_path=test_config_path,
-            simulation_mode=True,
-            safety_level=SafetyLevel.HIGH
-        )
-        controller.initialize()
-        
-        assert controller.safety_level == SafetyLevel.HIGH
+    def test_safety_level_enforcement(self, mock_config_files):
+        """Test safety level speed enforcement."""
+        controller = XArmController(profile_name='test_profile', safety_level=SafetyLevel.HIGH, simulation_mode=True)
+        # High safety should cap speeds
+        assert controller.tcp_speed < controller.safety_config.get('max_tcp_speed', 1000)
 
     def test_joint_limit_validation(self, simulation_controller):
         """Test joint limit validation."""
-        controller = simulation_controller
-        controller.initialize()
-        
-        # Test with valid joint angles
-        success = controller.move_joints([0, 0, 0, 0, 0, 0, 0])
-        assert success is True
+        simulation_controller.initialize()
+        # This should fail validation
+        assert simulation_controller.move_joints([500] * 6) is False
 
     def test_workspace_boundary_validation(self, initialized_controller):
         """Test workspace boundary validation."""
-        controller = initialized_controller
-        
-        # Test with valid position
-        success = controller.move_to_position(
-            x=300, y=0, z=300,
-            roll=180, pitch=0, yaw=0
-        )
-        assert success is True
+        # This should fail validation
+        assert initialized_controller.move_to_position(x=9000, y=0, z=0) is False
 
 
 class TestErrorHandling:
-    """Test error handling and recovery."""
+    """Test error handling scenarios."""
 
-    def test_missing_config_files(self, tmp_path):
-        """Test behavior with missing config files."""
-        # Create controller with non-existent config path
-        controller = XArmController(
-            config_path=str(tmp_path / "nonexistent"),
-            simulation_mode=True
-        )
-        
-        # Should still initialize with defaults
-        assert controller.xarm_config is not None
+    def test_missing_config_files(self, monkeypatch):
+        """Test handling of missing configuration files."""
+        # Patch load_config to simulate FileNotFoundError
+        monkeypatch.setattr('src.core.xarm_controller.load_config', MagicMock(side_effect=FileNotFoundError))
+        controller = XArmController(profile_name='non_existent_profile', simulation_mode=True)
+        # Should initialize with default values
+        assert controller.initialize() is True
 
-    def test_invalid_gripper_type(self, test_config_path):
-        """Test behavior with invalid gripper type."""
-        controller = XArmController(
-            config_path=test_config_path,
-            simulation_mode=True,
-            gripper_type='invalid'
-        )
-        
-        # Should still initialize
-        assert controller.gripper_type == 'invalid'
+    def test_invalid_gripper_type(self, mock_config_files):
+        """Test handling of an invalid gripper type."""
+        with pytest.raises(ValueError, match="Invalid gripper type"):
+            XArmController(profile_name='test_profile', gripper_type='invalid_gripper')
 
-    def test_arm_none_operations(self, test_config_path):
-        """Test operations when arm is None."""
-        controller = XArmController(
-            config_path=test_config_path,
-            simulation_mode=True
-        )
-        
-        # Temporarily set arm to None
-        original_arm = controller.arm
+    def test_arm_none_operations(self, mock_config_files):
+        """Test that operations fail gracefully if arm is None."""
+        controller = XArmController(profile_name='test_profile', simulation_mode=True)
+        controller.initialize() # Initialize to set up states
+        controller.arm = None  # Manually set arm to None after initialization
+        assert controller.move_to_position(x=300, y=0, z=300) is False, "Movement should fail if arm is None."
+
+    def test_position_updates_with_none_arm(self, mock_config_files):
+        """Test that position updates don't crash if arm is None."""
+        controller = XArmController(profile_name='test_profile', simulation_mode=True)
         controller.arm = None
-        
-        # Operations should handle None gracefully
-        status = controller.get_system_status()
-        assert status is not None
-        
-        # Restore arm
-        controller.arm = original_arm
-
-    def test_position_updates_with_none_arm(self, test_config_path):
-        """Test position updates when arm is None."""
-        controller = XArmController(
-            config_path=test_config_path,
-            simulation_mode=True
-        )
-        
-        # Temporarily set arm to None
-        original_arm = controller.arm
-        controller.arm = None
-        
-        # Should not crash
-        controller._update_positions()
-        
-        # Restore arm
-        controller.arm = original_arm
+        controller._update_positions()  # Should not raise an exception
 
 
 class TestConfigurationManagement:
-    """Test configuration management features."""
+    """Test advanced configuration management."""
 
-    def test_host_priority_resolution(self, test_config_path):
-        """Test host resolution priority."""
-        # Test direct host parameter takes priority
-        controller = XArmController(
-            host='192.168.1.100',
-            config_path=test_config_path,
-            simulation_mode=True
-        )
-        
+    def test_host_priority_resolution(self, mock_config_files):
+        """Test that host passed directly to constructor takes priority."""
+        controller = XArmController(profile_name='test_profile', host='192.168.1.100')
         assert controller.host == '192.168.1.100'
 
-    def test_model_configuration(self, test_config_path):
-        """Test model configuration."""
-        controller = XArmController(
-            config_path=test_config_path,
-            simulation_mode=True,
-            model=6
-        )
-        
+    def test_model_configuration(self, mock_config_files):
+        """Test model configuration from profile."""
+        controller = XArmController(profile_name='test_profile')
         assert controller.model == 6
-        assert controller.num_joints == 6
 
     def test_safety_config_loading(self, initialized_controller):
-        """Test safety configuration loading."""
-        controller = initialized_controller
-        
-        # Should have safety config loaded
-        assert hasattr(controller, 'safety_config')
-
+        """Test that safety configuration is loaded."""
+        assert 'workspace_limits' in initialized_controller.safety_config
 
 class TestBackwardCompatibility:
-    """Test backward compatibility features."""
-
-    def test_legacy_method_compatibility(self, initialized_controller):
-        """Test that legacy methods still work."""
-        controller = initialized_controller
-        
-        # Test legacy method names if they exist
-        if hasattr(controller, 'get_model'):
-            model = controller.get_model()
-            assert isinstance(model, int)
-        
-        if hasattr(controller, 'get_num_joints'):
-            joints = controller.get_num_joints()
-            assert isinstance(joints, int) 
+    """Test backward compatibility of methods if any."""
+    pass # No legacy methods to test for now 

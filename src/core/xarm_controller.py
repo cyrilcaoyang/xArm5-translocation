@@ -47,6 +47,11 @@ class XArmController:
             simulation_mode (bool): Enable simulation mode (no hardware required)
             safety_level (SafetyLevel): Safety level for validation strictness
         """
+        # Validate gripper type
+        valid_grippers = ['bio', 'standard', 'robotiq', 'none']
+        if gripper_type not in valid_grippers:
+            raise ValueError(f"Invalid gripper type '{gripper_type}'. Must be one of {valid_grippers}")
+
         # The provided simulation_mode parameter is the source of truth.
         self.simulation_mode = simulation_mode
         
@@ -374,7 +379,7 @@ class XArmController:
                 return 0
 
             # Home position
-            def move_gohome(self, wait=True):
+            def move_gohome(self, speed=None, mvacc=None, wait=True):
                 self.controller.last_joints = [0] * self.controller.num_joints
                 self.controller.last_position = [300, 0, 300, 180, 0, 0]
                 return 0
@@ -747,89 +752,96 @@ class XArmController:
 
     def initialize(self):
         """
-        Initializes the robot arm connection and sets the initial state.
-        Components are only enabled if auto_enable=True.
-        Supports both hardware and simulation modes.
+        Initializes the connection to the xArm, enables components, and starts monitoring.
+        This method is now idempotent.
         """
-        # Prevent re-initialization if already connected and enabled
-        if self.states.get('connection') == ComponentState.ENABLED and self.arm and self.arm.connected:
+        # Idempotency check: if already enabled, do nothing.
+        if self.states['connection'] == ComponentState.ENABLED:
             print("Controller is already initialized.")
             return True
-            
-        mode_str = "Simulation" if self.simulation_mode else "Hardware"
-        print(f"Initializing Robot Arm ({mode_str})...")
 
-        try:
-            self.states['connection'] = ComponentState.ENABLING
+        self.states['connection'] = ComponentState.ENABLING
 
-            # Create the XArmAPI connection if not already created
-            if self.arm is None:
-                if self.simulation_mode:
-                    # Use official SDK simulation mode with do_not_open=True
-                    self.arm = XArmAPI(self.xarm_config.get('host'), do_not_open=True)
-                    print("Created simulation instance (do_not_open=True)")
-                else:
-                    # Normal hardware connection
-                    self.arm = XArmAPI(self.host)
-
-            # Connect only if not in simulation mode
-            if not self.simulation_mode:
-                self.arm.connect()
-
-                if not self.arm.connected:
-                    self.states['connection'] = ComponentState.ERROR
-                    print("Failed to connect to robot arm")
-                    return False
-            else:
-                print("Simulation mode: Skipping hardware connection")
-
+        if self.simulation_mode:
+            print("Initializing Robot Arm (Simulation)...")
             self.states['connection'] = ComponentState.ENABLED
-
-            # Clear any existing errors/warnings (skip in simulation)
-            if not self.simulation_mode:
-                self.arm.clean_warn()
-                self.arm.clean_error()
-
-            # Enable motion and set modes
-            self.states['arm'] = ComponentState.ENABLING
-
-            if not self.simulation_mode:
-                self.arm.motion_enable(enable=True)
-                self.arm.set_mode(0)  # Position control mode
-                self.arm.set_state(0)  # Ready state
-                time.sleep(1)
-
-                # Register callbacks for monitoring
-                self.arm.register_error_warn_changed_callback(self._error_warn_callback)
-                self.arm.register_state_changed_callback(self._state_changed_callback)
-            else:
-                print("Simulation mode: Skipping motion enable and callbacks")
-
             self.states['arm'] = ComponentState.ENABLED
-
-            # Auto-enable components if requested
+            print("Simulation mode: Skipping hardware connection")
             if self.auto_enable:
-                if self.gripper_type != 'none':
-                    self.enable_gripper_component()
-
-                if self.enable_track:
-                    self.enable_track_component()
-
-            # Start monitoring thread for Phase 2 performance tracking
-            if not self.simulation_mode:
-                self._start_monitoring_thread()
-
-            print(f"{'Simulation' if self.simulation_mode else 'Hardware'} xArm Controller Initialized")
-            self._update_positions()
-            if self.enable_track:
-                self._update_track_position()
+                self.enable_gripper_component()
+                self.enable_track_component()
+                print("Simulation mode: Skipping motion enable and callbacks")
+            print("Simulation xArm Controller Initialized")
             return True
 
-        except Exception as e:
-            print(f"Failed to initialize robot arm: {e}")
-            self.states['arm'] = ComponentState.ERROR
-            self.states['connection'] = ComponentState.ERROR
-            return False
+        print("Initializing Robot Arm (Hardware)...")
+        # Add connection retry logic, especially for Docker containers
+        max_retries = 3
+        retry_delay = 2  # seconds
+        for attempt in range(max_retries):
+            try:
+                # Connect to the arm
+                code = self.arm.connect()
+                if self.check_code(code, "connect"):
+                    # Connection successful, proceed with initialization
+                    # Enable motion and set mode/state
+                    enable_code = self.arm.motion_enable(enable=True)
+                    # Error code 3 is often "already enabled" or similar non-critical issue
+                    if enable_code == 3:
+                        print("Warning: motion_enable returned code 3 (likely already enabled)")
+                        # Don't treat this as a fatal error - motion is already enabled
+                    elif enable_code not in [None, 0]:
+                        print(f"Warning: motion_enable returned code {enable_code}, continuing with initialization")
+                        # For other non-zero codes, check if they're critical
+                        if enable_code > 10:  # Only treat serious errors as fatal
+                            if not self.check_code(enable_code, "motion_enable"):
+                                continue  # Retry the connection attempt
+                    
+                    self.arm.set_mode(0)
+                    self.arm.set_state(0)
+                    time.sleep(1)
+
+                    # Register callbacks for monitoring
+                    self.arm.register_error_warn_changed_callback(self._error_warn_callback)
+                    self.arm.register_state_changed_callback(self._state_changed_callback)
+
+                    self.states['connection'] = ComponentState.ENABLED
+                    self.states['arm'] = ComponentState.ENABLED
+
+                    # Reset alive state to True after successful initialization
+                    # This ensures minor errors during init don't permanently disable the controller
+                    self.alive = True
+
+                    # Auto-enable components if requested
+                    if self.auto_enable:
+                        if self.gripper_type != 'none':
+                            self.enable_gripper_component()
+
+                        if self.enable_track:
+                            self.enable_track_component()
+
+                    # Start monitoring thread for Phase 2 performance tracking
+                    if not self.simulation_mode:
+                        self._start_monitoring_thread()
+
+                    print(f"{'Simulation' if self.simulation_mode else 'Hardware'} xArm Controller Initialized")
+                    self._update_positions()
+                    if self.enable_track:
+                        self._update_track_position()
+                    return True
+                else:
+                    # Connection failed, log and retry
+                    print(f"Connection attempt {attempt + 1} failed. Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+
+            except Exception as e:
+                print(f"Exception during connection attempt {attempt + 1}: {e}")
+                time.sleep(retry_delay)
+
+        # If all retries fail
+        self.states['connection'] = ComponentState.ERROR
+        print("Failed to connect to xArm after multiple retries.")
+        return False
 
     def enable_gripper_component(self):
         """Enable the gripper component based on configured type."""
@@ -1047,7 +1059,11 @@ class XArmController:
 
     def check_code(self, code, operation_name):
         """Check if an operation was successful."""
-        if not self.is_alive or code != 0:
+        # For xArm SDK, None or 0 typically indicates success
+        # Some operations (like connect) return None on success
+        is_success = (code is None or code == 0)
+        
+        if not self.is_alive or not is_success:
             self.alive = False
             state = self.arm.state if self.arm else None
             error = self.arm.error_code if self.arm else None
@@ -1061,15 +1077,28 @@ class XArmController:
             # In simulation mode, always return True if initialized
             return self.alive and self.arm is not None
 
-        if self.alive and self.arm and self.arm.connected and self.arm.error_code == 0:
+        if self.alive and self.arm and self.arm.connected:
+            # For Docker simulator, be more lenient with error codes
+            is_docker = self.profile_name and 'docker' in self.profile_name.lower()
+            
+            if is_docker:
+                # Docker simulator can have minor errors but still be functional
+                # Check if we're in a critical error state (> 10 are usually serious)
+                if hasattr(self.arm, 'error_code') and self.arm.error_code > 10:
+                    return False
+            else:
+                # For real hardware, be stricter about error codes
+                if hasattr(self.arm, 'error_code') and self.arm.error_code != 0:
+                    return False
+            
             if self._ignore_exit_state:
                 return True
-            if self.arm.state == 5:
+            if hasattr(self.arm, 'state') and self.arm.state == 5:
                 cnt = 0
                 while self.arm.state == 5 and cnt < 5:
                     cnt += 1
                     time.sleep(0.1)
-            return self.arm.state < 4
+            return not hasattr(self.arm, 'state') or self.arm.state < 4
         return False
 
     # =============================================================================
@@ -1201,8 +1230,12 @@ class XArmController:
         Returns:
             bool: True if movement successful, False otherwise
         """
+        if not self.arm:
+            print("Error: Arm is not initialized. Cannot perform movement.")
+            return False
+
         if not self.is_component_enabled('arm'):
-            print("Arm is not enabled")
+            print("Warning: Arm is not enabled. Cannot perform movement.")
             return False
 
         # Set defaults

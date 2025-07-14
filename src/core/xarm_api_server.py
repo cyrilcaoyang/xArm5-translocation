@@ -216,7 +216,7 @@ async def broadcast_status_update():
                 "connection_status": "Connected" if is_connected else "Disconnected",
                 "connection_details": connection_details,
                 "system_status": system_status,
-                "is_alive": system_status.get('is_alive', False),
+                "is_alive": controller.is_alive,
                 "component_states": controller.get_component_states(),
                 "current_position": controller.get_current_position(),
                 "current_joints": controller.get_current_joints(),
@@ -344,12 +344,16 @@ async def disconnect_robot():
         "data": {
             "connection_status": "Disconnected",
             "connection_details": None,
-            "system_status": {"is_alive": False},
+            "system_status": {"connection": {"alive": False}},
+            "is_alive": False,
             "component_states": {
                 "arm": "disabled",
                 "gripper": "disabled",
                 "track": "disabled"
-            }
+            },
+            "current_position": None,
+            "current_joints": None,
+            "track_position": None
         }
     }))
     
@@ -361,28 +365,42 @@ async def disconnect_robot():
 @app.get("/status")
 async def get_status():
     """Get the current status of the robot and all components."""
-    c = get_controller()
+    global controller
+    
+    # Handle disconnected state gracefully
+    if not controller:
+        return {
+            "connection_state": "disconnected",
+            "connection_details": None,
+            "arm_state": "disabled",
+            "gripper_state": "disabled", 
+            "track_state": "disabled",
+            "is_alive": False,
+            "current_position": None,
+            "current_joints": None,
+            "last_error": None,
+        }
     
     # Include connection details if connected
     connection_details = None
-    if c and c.is_alive:
+    if controller.is_alive:
         connection_details = {
-            "host": c.host,
-            "port": c.xarm_config.get('port', 18333),
-            "profile_name": getattr(c, 'profile_name', 'unknown'),
-            "simulation_mode": c.simulation_mode
+            "host": controller.host,
+            "port": controller.xarm_config.get('port', 18333),
+            "profile_name": getattr(controller, 'profile_name', 'unknown'),
+            "simulation_mode": controller.simulation_mode
         }
     
     return {
-        "connection_state": c.states.get('connection'),
+        "connection_state": controller.states.get('connection').value if controller.states.get('connection') else "unknown",
         "connection_details": connection_details,
-        "arm_state": c.states.get('arm'),
-        "gripper_state": c.states.get('gripper'),
-        "track_state": c.states.get('track'),
-        "is_alive": c.is_alive,
-        "current_position": c.get_current_position(),
-        "current_joints": c.get_current_joints(),
-        "last_error": c.last_error,
+        "arm_state": controller.states.get('arm').value if controller.states.get('arm') else "unknown",
+        "gripper_state": controller.states.get('gripper').value if controller.states.get('gripper') else "unknown",
+        "track_state": controller.states.get('track').value if controller.states.get('track') else "unknown",
+        "is_alive": controller.is_alive,
+        "current_position": controller.get_current_position(),
+        "current_joints": controller.get_current_joints(),
+        "last_error": getattr(controller, 'last_error', None),
     }
 
 @app.get("/status/performance")

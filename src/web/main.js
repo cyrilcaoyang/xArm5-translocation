@@ -1,4 +1,19 @@
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, checking elements...');
+    console.log('connection-details exists:', !!document.getElementById('connection-details'));
+    console.log('status-container exists:', !!document.getElementById('status-container'));
+    console.log('status-main exists:', !!document.getElementById('status-main'));
+    
+    // Create connection-details element if it doesn't exist
+    if (!document.getElementById('connection-details')) {
+        console.log('Creating missing connection-details element');
+        const statusContainer = document.getElementById('status-container');
+        const connectionDetails = document.createElement('div');
+        connectionDetails.id = 'connection-details';
+        connectionDetails.className = 'connection-details';
+        statusContainer.appendChild(connectionDetails);
+    }
+    
     const API_BASE_URL = `${window.location.protocol}//${window.location.host}`;
     const WS_URL = `ws://${window.location.host}/ws`;
 
@@ -24,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let socket;
 
     // --- API Helper ---
-    async function apiRequest(endpoint, method = 'GET', body = null) {
+    async function apiRequest(endpoint, method = 'GET', body = null, skipErrorDisplay = false) {
         try {
             const options = {
                 method,
@@ -36,13 +51,53 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+                let errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+                
+                // Simplify connection error messages
+                if (endpoint === '/connect' && response.status >= 500) {
+                    errorMessage = 'Failed to initialize robot connection.';
+                }
+                
+                throw new Error(errorMessage);
             }
             return response.json();
         } catch (error) {
             console.error(`API request failed: ${error.message}`);
-            updateStatusText(`Error: ${error.message}`, 'error');
+            
+            // For connection errors, show error below status (unless skipped)
+            if (!skipErrorDisplay) {
+                showMessage(error.message, 'error');
+            }
             return null;
+        }
+    }
+
+    // --- Status Fetching ---
+    async function fetchAndUpdateStatus() {
+        try {
+            const statusData = await apiRequest('/status', 'GET', null, true); // Skip error display
+            if (statusData) {
+                // Transform the /status response to match updateStatusUI format
+                const transformedData = {
+                    is_alive: statusData.is_alive,
+                    connection_details: statusData.connection_details,
+                    system_status: { last_error: statusData.last_error || 'None' },
+                    component_states: {
+                        arm: statusData.arm_state || 'N/A',
+                        gripper: statusData.gripper_state || 'N/A', 
+                        track: statusData.track_state || 'N/A'
+                    },
+                    current_position: statusData.current_position,
+                    current_joints: statusData.current_joints,
+                    track_position: null // Will be fetched separately if needed
+                };
+                updateStatusUI(transformedData);
+            }
+        } catch (error) {
+            console.error('Failed to fetch status:', error);
+            // On error, assume disconnected
+            setControlsState(false);
+            updateStatusText('Disconnected');
         }
     }
 
@@ -53,11 +108,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Update connection text and light
         if (isConnected && data.connection_details) {
+            updateStatusText('Connected');
             const details = data.connection_details;
             const subtext = `${details.host}:${details.port} (${details.profile_name}${details.simulation_mode ? ' - Simulation' : ''})`;
-            updateStatusText('Connected', subtext);
+            showMessage(subtext, 'info');
         } else {
             updateStatusText('Disconnected');
+            clearMessage();
         }
         
         // Update status grid
@@ -79,26 +136,43 @@ document.addEventListener('DOMContentLoaded', () => {
         setControlsState(isConnected);
     }
     
-    function updateStatusText(text, subtext = null) {
+    function updateStatusText(text) {
         const statusText = document.getElementById('status-text');
         const statusLight = document.getElementById('status-light');
         
         statusText.innerHTML = text;
-        if (subtext) {
-            statusText.innerHTML += `<br><small>${subtext}</small>`;
-        }
-
-        if (text.toLowerCase().includes('connected') || text.toLowerCase().includes('success')) {
+        // Set status light based on connection state
+        const lowerText = text.toLowerCase();
+        if (lowerText === 'connected') {
             statusLight.className = 'status-light online';
-        } else if (text.toLowerCase().includes('error')) {
-            statusLight.className = 'status-light error';
         } else {
             statusLight.className = 'status-light offline';
+        }
+        // Do not clear error message here; let it persist until next status change
+    }
+
+    // --- Message Helpers ---
+    function showMessage(msg, type = 'info') {
+        const messageDiv = document.getElementById('connection-details');
+        if (messageDiv) {
+            messageDiv.textContent = msg;
+            messageDiv.className = type === 'error' ? 'error-message-error' : 'error-message-info';
+        } else {
+            console.error('connection-details element not found');
+        }
+    }
+    function clearMessage() {
+        const messageDiv = document.getElementById('connection-details');
+        if (messageDiv) {
+            messageDiv.textContent = '';
+            messageDiv.className = '';
+        } else {
+            console.error('connection-details element not found');
         }
     }
 
     function setControlsState(enabled) {
-        // Enable/disable all control buttons except connect
+        // Enable/disable all control buttons based on connection state
         const controlButtons = [
             disconnectBtn, movePosBtn, moveJointsBtn, moveLocBtn, 
             homeBtn, stopBtn, openGripperBtn, closeGripperBtn, moveTrackLocBtn
@@ -108,8 +182,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (btn) btn.disabled = !enabled;
         });
         
-        // Connect button is opposite - enabled when disconnected
-        connectBtn.disabled = enabled;
+        // Connect button is opposite - enabled when disconnected, disabled when connected
+        if (connectBtn) connectBtn.disabled = enabled;
     }
 
     // --- WebSocket Handling ---
@@ -127,8 +201,12 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         socket.onclose = () => {
             console.log('WebSocket disconnected.');
-            setControlsState(false);
-            updateStatusText('Disconnected');
+            // Only update UI if there's no error currently shown
+            const statusText = document.getElementById('status-text');
+            if (!statusText.textContent.toLowerCase().includes('error')) {
+                setControlsState(false);
+                updateStatusText('Disconnected');
+            }
         };
         socket.onerror = (error) => console.error('WebSocket error:', error);
     }
@@ -168,6 +246,9 @@ document.addEventListener('DOMContentLoaded', () => {
     connectBtn.addEventListener('click', async () => {
         const selectedProfile = configSelect.value;
         
+        // Disable connect button during connection attempt
+        connectBtn.disabled = true;
+        
         const body = {
             profile_name: selectedProfile,
             simulation_mode: simulationModeCheckbox.checked,
@@ -175,20 +256,49 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const response = await apiRequest('/connect', 'POST', body);
-        if (response) {
-                // The WebSocket will handle the UI update. We just need to connect it.
-                connectWebSocket();
+        
+        if (response && response.message) {
+            // Extract connection details from the connect response
+            const details = response.connection_details;
+            if (details) {
+                const connectedText = `${details.host}:${details.port} (${details.profile_name}${details.simulation_mode ? ' - Simulation' : ''})`;
+                updateStatusText('Connected');
+                showMessage(connectedText, 'info');
+            } else {
+                updateStatusText('Connected');
+                clearMessage();
+            }
+            
+            // Enable controls since connection was successful
+            setControlsState(true);
+            
+            // Start WebSocket for real-time updates
+            connectWebSocket();
+            
+            // Fetch current status to get detailed state info
+            setTimeout(() => fetchAndUpdateStatus(), 500);
+        } else {
+            // Connection failed - re-enable connect button
+            connectBtn.disabled = false;
+            setControlsState(false);
         }
     });
 
     disconnectBtn.addEventListener('click', async () => {
+        console.log('Disconnect button clicked');
         const response = await apiRequest('/disconnect', 'POST');
-        if (response) {
-            // The disconnect endpoint now broadcasts a final "disconnected" status.
-            // We can rely on the WebSocket `onclose` handler to update the UI.
-            updateStatusText(response.message || 'Disconnected');
-        }
+        
+        // Close WebSocket connection first to prevent it from overriding our status update
         if (socket) socket.close();
+        
+        // Always update UI state regardless of response (in case of server issues)
+        setControlsState(false);  // Disable disconnect and other controls, enable connect
+        updateStatusText('Disconnected');
+        clearMessage();
+        
+        if (response && response.message) {
+            console.log('Disconnect response:', response.message);
+        }
     });
 
     movePosBtn.addEventListener('click', () => {
@@ -213,8 +323,14 @@ document.addEventListener('DOMContentLoaded', () => {
         apiRequest('/move/location', 'POST', { location_name });
     });
 
-    homeBtn.addEventListener('click', () => apiRequest('/move/home', 'POST'));
-    stopBtn.addEventListener('click', () => apiRequest('/move/stop', 'POST'));
+    homeBtn.addEventListener('click', () => {
+        console.log('Home button clicked');
+        apiRequest('/move/home', 'POST');
+    });
+    stopBtn.addEventListener('click', () => {
+        console.log('Stop button clicked');
+        apiRequest('/move/stop', 'POST');
+    });
 
     openGripperBtn.addEventListener('click', () => apiRequest('/gripper/open', 'POST', {}));
     closeGripperBtn.addEventListener('click', () => apiRequest('/gripper/close', 'POST', {}));
@@ -243,4 +359,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Initialization ---
     setControlsState(false);
     loadInitialData().catch(console.error);
+    
+    // Check current connection status on page load (after a short delay)
+    setTimeout(() => {
+        fetchAndUpdateStatus().catch(() => {
+            // If status check fails, assume disconnected (which is the default)
+            console.log('Initial status check failed - assuming disconnected state');
+        });
+    }, 100);
 }); 

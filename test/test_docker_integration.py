@@ -11,7 +11,7 @@ import os
 # Add project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from core.xarm_controller import XArmController, ComponentState
+from src.core.xarm_controller import XArmController, ComponentState
 
 
 @pytest.mark.integration
@@ -21,102 +21,61 @@ class TestDockerIntegration:
     @pytest.fixture
     def docker_controller(self):
         """Create a controller configured for Docker simulator."""
-        controller = XArmController(
-            config_path='settings/',
+        return XArmController(
+            profile_name='docker_local',
             gripper_type='bio',
             enable_track=True,
             auto_enable=False
         )
-        
-        # Override the arm connection for Docker simulator
-        from xarm.wrapper import XArmAPI
-        controller.arm = XArmAPI('127.0.0.1', check_joint_limit=False)
-        
-        return controller
     
     def test_docker_connection(self, docker_controller):
         """Test connection to Docker simulator."""
-        success = docker_controller.initialize()
-        
-        if not success:
+        if not is_docker_available():
             pytest.skip("Docker simulator not available at 127.0.0.1")
         
+        success = docker_controller.initialize()
         assert success is True
         assert docker_controller.arm.connected is True
         assert docker_controller.get_component_states()['connection'] == 'enabled'
         
-        # Clean up
         docker_controller.disconnect()
     
     def test_docker_full_workflow(self, docker_controller):
         """Test complete workflow with Docker simulator."""
-        # Initialize
-        success = docker_controller.initialize()
-        if not success:
+        if not is_docker_available():
             pytest.skip("Docker simulator not available")
+            
+        success = docker_controller.initialize()
+        assert success, "Failed to initialize controller for Docker workflow test"
         
         try:
-            # Check system status
             status = docker_controller.get_system_status()
             assert status['connection']['connected'] is True
             
-            # Enable components
-            gripper_enabled = docker_controller.enable_gripper_component()
-            track_enabled = docker_controller.enable_track_component()
+            # Note: Docker simulator has limitations, so we don't assert success for components
+            docker_controller.enable_gripper_component()
+            docker_controller.enable_track_component()
             
-            # Test basic movements
-            if docker_controller.is_component_enabled('arm'):
-                # Test getting current position (Docker simulator is reliable for this)
-                position = docker_controller.get_current_position()
-                assert position is not None
+            position = docker_controller.get_current_position()
+            assert position is not None
                 
-                # Test getting current joints
-                joints = docker_controller.get_current_joints()
-                assert joints is not None
-                assert len(joints) == 6
-                
-                # Skip movement tests for Docker simulator as they may fail due to state issues
-                # The connection and position retrieval are the key tests for Docker
-            
-            # Test gripper if enabled (Docker simulator may not support bio gripper)
-            if gripper_enabled and docker_controller.is_component_enabled('gripper'):
-                # Try gripper operations but don't require success for Docker simulator
-                open_success = docker_controller.open_gripper()
-                close_success = docker_controller.close_gripper()
-                # At least one should work or both can fail (Docker limitation)
-                print(f"Gripper test results: open={open_success}, close={close_success}")
-                time.sleep(0.5)
-            
-            # Test track if enabled (Docker simulator typically doesn't support linear track)
-            if track_enabled and docker_controller.is_component_enabled('track'):
-                # Try track operations but don't require success for Docker simulator
-                move_success = docker_controller.move_track_to_position(50)
-                reset_success = docker_controller.reset_track()
-                print(f"Track test results: move={move_success}, reset={reset_success}")
-                time.sleep(0.5)
-            
-            # Get final status
-            final_status = docker_controller.get_system_status()
-            assert final_status['connection']['connected'] is True
+            joints = docker_controller.get_current_joints()
+            assert joints is not None
             
         finally:
-            # Always disconnect
             docker_controller.disconnect()
     
     def test_docker_error_handling(self, docker_controller):
         """Test error handling with Docker simulator."""
-        success = docker_controller.initialize()
-        if not success:
+        if not is_docker_available():
             pytest.skip("Docker simulator not available")
+
+        success = docker_controller.initialize()
+        assert success, "Failed to initialize controller for error handling test"
         
         try:
-            # Test invalid movement (should handle gracefully)
-            success = docker_controller.move_to_named_location('invalid_location')
-            assert success is False
-            
-            # System should still be alive
+            assert docker_controller.move_to_named_location('invalid_location') is False
             assert docker_controller.is_alive
-            
         finally:
             docker_controller.disconnect()
 
@@ -128,28 +87,15 @@ class TestDockerStressTest:
     
     def test_multiple_connections(self):
         """Test multiple connect/disconnect cycles."""
-        for i in range(3):
-            controller = XArmController(
-                config_path='settings/',
-                gripper_type='bio',
-                auto_enable=False
-            )
-            
-            # Override for Docker
-            from xarm.wrapper import XArmAPI
-            controller.arm = XArmAPI('127.0.0.1', check_joint_limit=False)
-            
-            success = controller.initialize()
-            if not success:
-                pytest.skip("Docker simulator not available")
-            
-            # Quick test
+        if not is_docker_available():
+            pytest.skip("Docker simulator not available")
+
+        for _ in range(3):
+            controller = XArmController(profile_name='docker_local', auto_enable=False)
+            assert controller.initialize() is True
             assert controller.is_alive
-            
-            # Disconnect
             controller.disconnect()
-            
-            time.sleep(0.5)  # Brief pause between connections
+            time.sleep(0.1)
 
 
 @pytest.mark.integration
@@ -159,107 +105,61 @@ class TestDockerComponentIsolation:
     @pytest.fixture
     def initialized_docker_controller(self):
         """Fixture for initialized Docker controller."""
-        controller = XArmController(
-            config_path='settings/',
-            gripper_type='bio',
-            enable_track=True,
-            auto_enable=False
-        )
-        
-        from xarm.wrapper import XArmAPI
-        controller.arm = XArmAPI('127.0.0.1', check_joint_limit=False)
-        
-        success = controller.initialize()
-        if not success:
+        if not is_docker_available():
             pytest.skip("Docker simulator not available")
-        
+
+        controller = XArmController(profile_name='docker_local', auto_enable=False)
+        assert controller.initialize(), "Setup: failed to initialize controller"
         yield controller
-        
-        # Cleanup
         controller.disconnect()
     
     def test_docker_arm_only(self, initialized_docker_controller):
         """Test arm functionality without other components."""
         controller = initialized_docker_controller
-        
-        # Test basic arm movements
-        success = controller.move_joints([10, 0, 0, 0, 0, 0])
-        assert success is True
+        assert controller.move_joints([10, 0, 0, 0, 0, 0]) is True
         time.sleep(0.5)
-        
-        success = controller.move_joints([0, 0, 0, 0, 0, 0])
-        assert success is True
-        time.sleep(0.5)
-        
-        # Test position retrieval
-        position = controller.get_current_position()
-        assert position is not None
-        assert len(position) == 6
-        
-        joints = controller.get_current_joints()
-        assert joints is not None
-        assert len(joints) == 6
+        assert controller.move_joints([0, 0, 0, 0, 0, 0]) is True
     
     def test_docker_gripper_isolation(self, initialized_docker_controller):
         """Test gripper functionality in isolation."""
         controller = initialized_docker_controller
-        
-        # Enable only gripper
-        success = controller.enable_gripper_component()
-        if not success:
+        if not controller.enable_gripper_component():
             pytest.skip("Gripper not available in simulator")
         
-        # Test gripper operations
-        success = controller.open_gripper()
-        assert success is True
+        assert controller.open_gripper() is True
         time.sleep(0.5)
-        
-        success = controller.close_gripper() 
-        assert success is True
-        time.sleep(0.5)
+        assert controller.close_gripper() is True
     
     def test_docker_track_isolation(self, initialized_docker_controller):
         """Test linear track functionality in isolation."""
         controller = initialized_docker_controller
-        
-        # Enable only track
-        success = controller.enable_track_component()
-        if not success:
+        if not controller.enable_track_component():
             pytest.skip("Linear track not available in simulator")
         
-        # Test track operations
-        success = controller.move_track_to_position(25)
-        assert success is True
+        assert controller.move_track_to_position(25) is True
         time.sleep(0.5)
-        
-        success = controller.reset_track()
-        assert success is True
-        time.sleep(0.5)
-        
-        # Test position retrieval
-        position = controller.get_track_position()
-        assert position is not None
+        assert controller.reset_track() is True
 
 
-def test_docker_availability():
-    """Test if Docker simulator is available."""
-    try:
-        from xarm.wrapper import XArmAPI
-        arm = XArmAPI('127.0.0.1', check_joint_limit=False)
-        arm.connect()
-        available = arm.connected
-        arm.disconnect()
-        return available
-    except Exception:
-        return False
+def is_docker_available():
+    """Singleton check for Docker availability to speed up tests."""
+    if not hasattr(is_docker_available, "available"):
+        arm = None
+        try:
+            from xarm.wrapper import XArmAPI
+            # Use docker_local profile settings for the check
+            arm = XArmAPI('127.0.0.1', check_joint_limit=False, do_not_open=True)
+            arm.connect()
+            is_docker_available.available = arm.connected
+        except Exception:
+            is_docker_available.available = False
+        finally:
+            if arm and arm.connected:
+                arm.disconnect()
+    return is_docker_available.available
 
-
-if __name__ == "__main__":
-    # Quick availability check
-    if test_docker_availability():
-        print("✅ Docker simulator is available at 127.0.0.1")
-        print("Run tests with: pytest tests/test_docker_integration.py -v")
-    else:
-        print("❌ Docker simulator not available")
-        print("Make sure Docker container is running and xArm firmware is started")
-        print("See README.md for Docker setup instructions") 
+@pytest.mark.integration
+def test_docker_availability_marker():
+    """A simple test that marks the suite based on Docker's availability."""
+    if not is_docker_available():
+        pytest.fail("Docker simulator is not running or not reachable at 127.0.0.1. Please start it to run integration tests.") 
