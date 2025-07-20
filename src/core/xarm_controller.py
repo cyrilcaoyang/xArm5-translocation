@@ -67,6 +67,7 @@ class XArmController:
         self.track_config = {}
         self.location_config = {}
         self.safety_config = {}
+        self.force_torque_config = {}
 
         # Configuration loading
         self._load_configurations()
@@ -156,7 +157,8 @@ class XArmController:
             'gripper_config': self.gripper_type + '_gripper_config.yaml' if self.gripper_type != 'none' else None,
             'track_config': 'linear_track_config.yaml' if self.enable_track else None,
             'location_config': 'location_config.yaml',
-            'safety_config': 'safety.yaml'
+            'safety_config': 'safety.yaml',
+            'force_torque_config': 'force_torque_config.yaml'
         }
 
         for config_attr, file_name in component_configs.items():
@@ -177,7 +179,8 @@ class XArmController:
             'connection': ComponentState.DISABLED,
             'arm': ComponentState.DISABLED,
             'gripper': ComponentState.DISABLED,
-            'track': ComponentState.DISABLED
+            'track': ComponentState.DISABLED,
+            'force_torque': ComponentState.DISABLED
         }
 
         # Error tracking with automatic cleanup
@@ -190,6 +193,14 @@ class XArmController:
         self.last_position = [300, 0, 300, 180, 0, 0]  # Default position
         self.last_joints = [0] * self.num_joints
         self.last_track_position = 0
+
+        # Force torque sensor tracking
+        self.force_torque_history = deque(maxlen=1000)
+        self.last_force_torque = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # [fx, fy, fz, tx, ty, tz]
+        self.force_torque_zero = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # Calibrated zero point
+        self.force_torque_calibrated = False
+        self.force_torque_alerts_active = False
+        self.last_alert_time = 0
 
         # Motion state tracking
         self._motion_in_progress = False
@@ -430,6 +441,17 @@ class XArmController:
 
             def get_linear_track_pos(self):
                 return [0, self.controller.last_track_position]
+
+            # Force torque sensor methods
+            def ft_sensor_enable(self, enable):
+                return 0
+
+            def get_ft_sensor_data(self):
+                # Return simulated force torque data
+                # In simulation, return small random values
+                import random
+                simulated_data = [random.uniform(-1, 1) for _ in range(6)]
+                return [0, *simulated_data]
 
         return SimulationArm(self)
 
@@ -1136,6 +1158,13 @@ class XArmController:
                 'state': self.states['track'].value,
                 'has_track': self.has_track(),
                 'position': self.last_track_position
+            },
+            'force_torque': {
+                'state': self.states['force_torque'].value,
+                'has_sensor': self.has_force_torque_sensor(),
+                'calibrated': self.force_torque_calibrated,
+                'last_reading': self.last_force_torque,
+                'magnitude': self.get_force_torque_magnitude()
             },
             'errors': {
                 'last_error': self.last_error_code,
@@ -1996,6 +2025,425 @@ class XArmController:
             force = self.gripper_config.get('GRIPPER_FORCE', 255)
         code = self.arm.robotiq_set_position(position, speed=speed, force=force, wait=wait)
         return self.check_code(code, f'set_robotiq_position({position})')
+
+    # =============================================================================
+    # FORCE TORQUE SENSOR METHODS
+    # =============================================================================
+
+    def enable_force_torque_sensor(self):
+        """Enable the 6-axis force torque sensor."""
+        if not self.force_torque_config.get('enable', True):
+            print("Force torque sensor is disabled in configuration")
+            return False
+
+        if self.simulation_mode:
+            print("Force torque sensor enabled in simulation mode")
+            self.states['force_torque'] = ComponentState.ENABLED
+            return True
+
+        try:
+            # Enable force torque sensor on the arm
+            code = self.arm.ft_sensor_enable(True)
+            if self.check_code(code, 'enable_force_torque_sensor'):
+                self.states['force_torque'] = ComponentState.ENABLED
+                print("Force torque sensor enabled")
+                
+                # Auto-calibrate if configured
+                if self.force_torque_config.get('calibration', {}).get('auto_calibrate', True):
+                    self.calibrate_force_torque_sensor()
+                
+                return True
+            return False
+        except Exception as e:
+            print(f"Failed to enable force torque sensor: {e}")
+            self.states['force_torque'] = ComponentState.ERROR
+            return False
+
+    def disable_force_torque_sensor(self):
+        """Disable the 6-axis force torque sensor."""
+        if self.simulation_mode:
+            self.states['force_torque'] = ComponentState.DISABLED
+            return True
+
+        try:
+            code = self.arm.ft_sensor_enable(False)
+            if self.check_code(code, 'disable_force_torque_sensor'):
+                self.states['force_torque'] = ComponentState.DISABLED
+                print("Force torque sensor disabled")
+                return True
+            return False
+        except Exception as e:
+            print(f"Failed to disable force torque sensor: {e}")
+            return False
+
+    def calibrate_force_torque_sensor(self, samples=None, delay=None):
+        """Calibrate the force torque sensor to zero."""
+        if not self.is_component_enabled('force_torque'):
+            print("Force torque sensor must be enabled before calibration")
+            return False
+
+        config = self.force_torque_config.get('calibration', {})
+        samples = samples or config.get('calibration_samples', 100)
+        delay = delay or config.get('calibration_delay', 0.1)
+        zero_threshold = config.get('zero_threshold', 0.5)
+
+        print(f"Calibrating force torque sensor with {samples} samples...")
+        
+        if self.simulation_mode:
+            # In simulation, just set zero point
+            self.force_torque_zero = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            self.force_torque_calibrated = True
+            print("Force torque sensor calibrated (simulation)")
+            return True
+
+        try:
+            # Collect samples for calibration
+            readings = []
+            for i in range(samples):
+                ret = self.arm.get_ft_sensor_data()
+                if ret[0] == 0:
+                    readings.append(ret[1:])
+                time.sleep(delay)
+
+            if len(readings) < samples // 2:
+                print("Insufficient readings for calibration")
+                return False
+
+            # Calculate average zero point
+            self.force_torque_zero = [
+                sum(r[i] for r in readings) / len(readings)
+                for i in range(6)
+            ]
+            
+            self.force_torque_calibrated = True
+            print("Force torque sensor calibrated successfully")
+            return True
+
+        except Exception as e:
+            print(f"Calibration failed: {e}")
+            return False
+
+    def get_force_torque_data(self):
+        """Get current force torque sensor data."""
+        if not self.is_component_enabled('force_torque'):
+            return None
+
+        if self.simulation_mode:
+            # Return simulated data
+            return self.last_force_torque.copy()
+
+        try:
+            ret = self.arm.get_ft_sensor_data()
+            if ret[0] == 0:
+                raw_data = ret[1:]
+                
+                # Apply calibration if available
+                if self.force_torque_calibrated:
+                    calibrated_data = [
+                        raw_data[i] - self.force_torque_zero[i]
+                        for i in range(6)
+                    ]
+                else:
+                    calibrated_data = raw_data
+
+                # Update last reading and history
+                self.last_force_torque = calibrated_data
+                self.force_torque_history.append({
+                    'timestamp': time.time(),
+                    'data': calibrated_data.copy()
+                })
+
+                return calibrated_data
+            return None
+        except Exception as e:
+            print(f"Failed to get force torque data: {e}")
+            return None
+
+    def get_force_torque_magnitude(self):
+        """Get the magnitude of force and torque vectors."""
+        data = self.get_force_torque_data()
+        if data is None:
+            return None
+
+        # Calculate force magnitude (first 3 values)
+        force_magnitude = (data[0]**2 + data[1]**2 + data[2]**2)**0.5
+        
+        # Calculate torque magnitude (last 3 values)
+        torque_magnitude = (data[3]**2 + data[4]**2 + data[5]**2)**0.5
+
+        return {
+            'force_magnitude': force_magnitude,
+            'torque_magnitude': torque_magnitude,
+            'total_magnitude': (force_magnitude**2 + torque_magnitude**2)**0.5
+        }
+
+    def get_force_torque_direction(self):
+        """Get the direction of force and torque vectors."""
+        data = self.get_force_torque_data()
+        if data is None:
+            return None
+
+        config = self.force_torque_config.get('direction_detection', {})
+        dead_zone = config.get('dead_zone', 2.0)
+
+        # Check if force is above dead zone
+        force_magnitude = (data[0]**2 + data[1]**2 + data[2]**2)**0.5
+        if force_magnitude < dead_zone:
+            force_direction = None
+        else:
+            # Normalize force vector
+            force_direction = [data[i] / force_magnitude for i in range(3)]
+
+        # Check if torque is above dead zone
+        torque_magnitude = (data[3]**2 + data[4]**2 + data[5]**2)**0.5
+        if torque_magnitude < dead_zone:
+            torque_direction = None
+        else:
+            # Normalize torque vector
+            torque_direction = [data[i+3] / torque_magnitude for i in range(3)]
+
+        return {
+            'force_direction': force_direction,
+            'torque_direction': torque_direction,
+            'force_magnitude': force_magnitude,
+            'torque_magnitude': torque_magnitude
+        }
+
+    def check_force_torque_safety(self):
+        """Check if force/torque exceeds safety thresholds and trigger alerts."""
+        if not self.is_component_enabled('force_torque'):
+            return False
+
+        data = self.get_force_torque_data()
+        if data is None:
+            return False
+
+        thresholds = self.force_torque_config.get('safety_thresholds', {})
+        force_thresholds = thresholds.get('force', {})
+        torque_thresholds = thresholds.get('torque', {})
+
+        # Check individual force components
+        force_violations = []
+        for i, axis in enumerate(['x', 'y', 'z']):
+            threshold = force_thresholds.get(axis, float('inf'))
+            if abs(data[i]) > threshold:
+                force_violations.append(f"{axis}: {data[i]:.2f}N > {threshold}N")
+
+        # Check individual torque components
+        torque_violations = []
+        for i, axis in enumerate(['x', 'y', 'z']):
+            threshold = torque_thresholds.get(axis, float('inf'))
+            if abs(data[i+3]) > threshold:
+                torque_violations.append(f"{axis}: {data[i+3]:.2f}Nm > {threshold}Nm")
+
+        # Check total magnitudes
+        magnitudes = self.get_force_torque_magnitude()
+        if magnitudes:
+            if magnitudes['force_magnitude'] > force_thresholds.get('magnitude', float('inf')):
+                force_violations.append(f"total: {magnitudes['force_magnitude']:.2f}N > {force_thresholds.get('magnitude')}N")
+            
+            if magnitudes['torque_magnitude'] > torque_thresholds.get('magnitude', float('inf')):
+                torque_violations.append(f"total: {magnitudes['torque_magnitude']:.2f}Nm > {torque_thresholds.get('magnitude')}Nm")
+
+        # Trigger alerts if violations detected
+        if force_violations or torque_violations:
+            current_time = time.time()
+            alert_cooldown = self.force_torque_config.get('alerts', {}).get('alert_cooldown', 1.0)
+            
+            if current_time - self.last_alert_time > alert_cooldown:
+                self._trigger_force_torque_alert(force_violations, torque_violations, data)
+                self.last_alert_time = current_time
+                return True
+
+        return False
+
+    def _trigger_force_torque_alert(self, force_violations, torque_violations, data):
+        """Trigger force/torque safety alert."""
+        alert_config = self.force_torque_config.get('alerts', {})
+        
+        message = "FORCE/TORQUE SAFETY ALERT!\n"
+        if force_violations:
+            message += f"Forces: {', '.join(force_violations)}\n"
+        if torque_violations:
+            message += f"Torques: {', '.join(torque_violations)}\n"
+        message += f"Current data: {[f'{x:.2f}' for x in data]}"
+
+        print(f"🚨 {message}")
+
+        # Trigger callbacks
+        self._trigger_callbacks('safety_violation', {
+            'type': 'force_torque',
+            'force_violations': force_violations,
+            'torque_violations': torque_violations,
+            'data': data,
+            'message': message
+        })
+
+    def move_until_force(self, direction, force_threshold=None, speed=None, timeout=30.0):
+        """
+        Move in a linear direction until a force threshold is reached.
+        
+        Args:
+            direction: Direction vector [x, y, z] (normalized)
+            force_threshold: Force threshold in Newtons (default from config)
+            speed: Movement speed in mm/s (default from config)
+            timeout: Maximum time to wait in seconds
+        
+        Returns:
+            bool: True if threshold reached, False if timeout or error
+        """
+        if not self.is_component_enabled('force_torque'):
+            print("Force torque sensor must be enabled for force-controlled movement")
+            return False
+
+        # Get thresholds from config
+        config = self.force_torque_config.get('operation_thresholds', {})
+        linear_force_config = config.get('linear_force', {})
+        
+        # Determine which axis to monitor based on direction
+        max_component = max(abs(x) for x in direction)
+        if abs(direction[0]) == max_component:
+            axis = 'x'
+        elif abs(direction[1]) == max_component:
+            axis = 'y'
+        else:
+            axis = 'z'
+
+        force_threshold = force_threshold or linear_force_config.get(axis, 30.0)
+        speed = speed or self.tcp_speed
+
+        print(f"Moving in direction {direction} until {axis}-force reaches {force_threshold}N")
+
+        start_time = time.time()
+        
+        try:
+            # Start velocity control in the specified direction
+            velocity = [speed * x for x in direction]
+            self.arm.vc_set_cartesian_velocity(velocity)
+
+            # Monitor force until threshold is reached
+            while time.time() - start_time < timeout:
+                data = self.get_force_torque_data()
+                if data is None:
+                    continue
+
+                # Check if force threshold is exceeded
+                if abs(data[0 if axis == 'x' else 1 if axis == 'y' else 2]) > force_threshold:
+                    # Stop motion
+                    self.arm.vc_set_cartesian_velocity([0, 0, 0, 0, 0, 0])
+                    print(f"Force threshold {force_threshold}N reached in {axis} direction")
+                    return True
+
+                time.sleep(0.01)  # 100Hz monitoring
+
+            # Timeout reached
+            self.arm.vc_set_cartesian_velocity([0, 0, 0, 0, 0, 0])
+            print(f"Timeout reached without hitting force threshold")
+            return False
+
+        except Exception as e:
+            print(f"Error during force-controlled movement: {e}")
+            self.arm.vc_set_cartesian_velocity([0, 0, 0, 0, 0, 0])
+            return False
+
+    def move_joint_until_torque(self, joint_id, target_angle, torque_threshold=None, speed=None, timeout=30.0):
+        """
+        Move a specific joint until a torque threshold is reached.
+        
+        Args:
+            joint_id: Joint number (1-7)
+            target_angle: Target angle in degrees
+            torque_threshold: Torque threshold in Nm (default from config)
+            speed: Movement speed in deg/s (default from config)
+            timeout: Maximum time to wait in seconds
+        
+        Returns:
+            bool: True if threshold reached, False if timeout or error
+        """
+        if not self.is_component_enabled('force_torque'):
+            print("Force torque sensor must be enabled for torque-controlled movement")
+            return False
+
+        if not 1 <= joint_id <= self.num_joints:
+            print(f"Invalid joint ID {joint_id}. Must be 1-{self.num_joints}")
+            return False
+
+        # Get thresholds from config
+        config = self.force_torque_config.get('operation_thresholds', {})
+        joint_torque_config = config.get('joint_torque', {})
+        
+        torque_threshold = torque_threshold or joint_torque_config.get(f'j{joint_id}', 2.0)
+        speed = speed or self.angle_speed
+
+        print(f"Moving joint {joint_id} to {target_angle}° until torque reaches {torque_threshold}Nm")
+
+        start_time = time.time()
+        
+        try:
+            # Get current joint angles
+            current_joints = self.get_current_joints()
+            if current_joints is None:
+                return False
+
+            # Determine direction of movement
+            angle_diff = target_angle - current_joints[joint_id - 1]
+            direction = 1 if angle_diff > 0 else -1
+
+            # Start joint velocity control
+            velocities = [0] * self.num_joints
+            velocities[joint_id - 1] = direction * speed
+            self.arm.vc_set_joint_velocity(velocities)
+
+            # Monitor torque until threshold is reached
+            while time.time() - start_time < timeout:
+                data = self.get_force_torque_data()
+                if data is None:
+                    continue
+
+                # Check if torque threshold is exceeded
+                # Map joint to torque axis (simplified mapping)
+                torque_axis = min(joint_id - 1, 2)  # Map to x, y, or z torque
+                if abs(data[3 + torque_axis]) > torque_threshold:
+                    # Stop motion
+                    self.arm.vc_set_joint_velocity([0] * self.num_joints)
+                    print(f"Torque threshold {torque_threshold}Nm reached for joint {joint_id}")
+                    return True
+
+                # Check if target angle reached
+                current_joints = self.get_current_joints()
+                if current_joints and abs(current_joints[joint_id - 1] - target_angle) < 1.0:
+                    self.arm.vc_set_joint_velocity([0] * self.num_joints)
+                    print(f"Target angle {target_angle}° reached for joint {joint_id}")
+                    return True
+
+                time.sleep(0.01)  # 100Hz monitoring
+
+            # Timeout reached
+            self.arm.vc_set_joint_velocity([0] * self.num_joints)
+            print(f"Timeout reached without hitting torque threshold")
+            return False
+
+        except Exception as e:
+            print(f"Error during torque-controlled movement: {e}")
+            self.arm.vc_set_joint_velocity([0] * self.num_joints)
+            return False
+
+    def get_force_torque_status(self):
+        """Get comprehensive force torque sensor status."""
+        return {
+            'enabled': self.is_component_enabled('force_torque'),
+            'calibrated': self.force_torque_calibrated,
+            'last_reading': self.last_force_torque,
+            'zero_point': self.force_torque_zero,
+            'history_length': len(self.force_torque_history),
+            'alerts_active': self.force_torque_alerts_active,
+            'magnitude': self.get_force_torque_magnitude(),
+            'direction': self.get_force_torque_direction()
+        }
+
+    def has_force_torque_sensor(self):
+        """Check if force torque sensor is available and enabled."""
+        return self.force_torque_config.get('enable', True)
 
 # Example usage:
 if __name__ == '__main__':

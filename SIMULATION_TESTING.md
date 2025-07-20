@@ -1,6 +1,6 @@
-# xArm Simulation Modes & Testing Strategy
+# PyXArm Simulation Modes & Testing Strategy
 
-This guide provides a comprehensive overview of the simulation modes and a three-stage testing strategy for the xArm-translocation project. Following this strategy ensures robust, safe, and reliable robot applications, progressing from pure software simulation to full physics simulation and finally to real hardware validation.
+This guide provides a comprehensive overview of the simulation modes and a three-stage testing strategy for the PyXArm project. Following this strategy ensures robust, safe, and reliable robot applications, progressing from pure software simulation to full physics simulation and finally to real hardware validation.
 
 ## 🔧 Understanding the `simulation_mode` Parameter
 

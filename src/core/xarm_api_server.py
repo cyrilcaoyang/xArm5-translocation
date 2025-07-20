@@ -142,7 +142,27 @@ class VelocityRequest(BaseModel):
 
 class ComponentRequest(BaseModel):
     """Request model for enabling/disabling a component."""
-    component: str = Field(description="Component to manage ('gripper' or 'track')")
+    component: str = Field(description="Component to manage ('gripper', 'track', or 'force_torque')")
+
+class ForceTorqueCalibrationRequest(BaseModel):
+    """Request model for force torque sensor calibration."""
+    samples: Optional[int] = Field(default=None, description="Number of calibration samples")
+    delay: Optional[float] = Field(default=None, description="Delay between samples in seconds")
+
+class ForceTorqueMovementRequest(BaseModel):
+    """Request model for force-controlled movement."""
+    direction: List[float] = Field(description="Direction vector [x, y, z] (normalized)")
+    force_threshold: Optional[float] = Field(default=None, description="Force threshold in Newtons")
+    speed: Optional[float] = Field(default=None, description="Movement speed in mm/s")
+    timeout: float = Field(default=30.0, description="Maximum time to wait in seconds")
+
+class JointTorqueMovementRequest(BaseModel):
+    """Request model for torque-controlled joint movement."""
+    joint_id: int = Field(description="Joint number (1-7)")
+    target_angle: float = Field(description="Target angle in degrees")
+    torque_threshold: Optional[float] = Field(default=None, description="Torque threshold in Nm")
+    speed: Optional[float] = Field(default=None, description="Movement speed in deg/s")
+    timeout: float = Field(default=30.0, description="Maximum time to wait in seconds")
 
 # Application lifespan management
 @asynccontextmanager
@@ -566,7 +586,7 @@ async def clear_errors(background_tasks: BackgroundTasks):
 
 @app.post("/component/enable")
 async def enable_component(request: ComponentRequest):
-    """Enable a specific component (gripper or track)."""
+    """Enable a specific component (gripper, track, or force_torque)."""
     c = get_controller()
     component = request.component.lower()
     success = False
@@ -574,8 +594,10 @@ async def enable_component(request: ComponentRequest):
         success = c.enable_gripper_component()
     elif component == 'track':
         success = c.enable_track_component()
+    elif component == 'force_torque':
+        success = c.enable_force_torque_sensor()
     else:
-        raise HTTPException(status_code=400, detail="Invalid component specified. Use 'gripper' or 'track'.")
+        raise HTTPException(status_code=400, detail="Invalid component specified. Use 'gripper', 'track', or 'force_torque'.")
     
     await broadcast_status_update()
     if success:
@@ -585,7 +607,7 @@ async def enable_component(request: ComponentRequest):
 
 @app.post("/component/disable")
 async def disable_component(request: ComponentRequest):
-    """Disable a specific component (gripper or track)."""
+    """Disable a specific component (gripper, track, or force_torque)."""
     c = get_controller()
     component = request.component.lower()
     success = False
@@ -593,8 +615,10 @@ async def disable_component(request: ComponentRequest):
         success = c.disable_gripper_component()
     elif component == 'track':
         success = c.disable_track_component()
+    elif component == 'force_torque':
+        success = c.disable_force_torque_sensor()
     else:
-        raise HTTPException(status_code=400, detail="Invalid component specified. Use 'gripper' or 'track'.")
+        raise HTTPException(status_code=400, detail="Invalid component specified. Use 'gripper', 'track', or 'force_torque'.")
 
     await broadcast_status_update()
     if success:
@@ -698,6 +722,133 @@ async def get_track_locations():
     except Exception as e:
         logger.error(f"Get track locations failed: {e}")
         raise HTTPException(status_code=500, detail=f"Get track locations failed: {str(e)}")
+
+# Force Torque Sensor endpoints
+@app.post("/force-torque/enable")
+async def enable_force_torque_sensor():
+    """Enable the 6-axis force torque sensor."""
+    c = get_controller()
+    
+    if not c.has_force_torque_sensor():
+        raise HTTPException(status_code=400, detail="Force torque sensor is not available or disabled in configuration.")
+    
+    success = c.enable_force_torque_sensor()
+    await broadcast_status_update()
+    
+    if success:
+        return {"message": "Force torque sensor enabled successfully."}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to enable force torque sensor.")
+
+@app.post("/force-torque/disable")
+async def disable_force_torque_sensor():
+    """Disable the 6-axis force torque sensor."""
+    c = get_controller()
+    
+    success = c.disable_force_torque_sensor()
+    await broadcast_status_update()
+    
+    if success:
+        return {"message": "Force torque sensor disabled successfully."}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to disable force torque sensor.")
+
+@app.post("/force-torque/calibrate")
+async def calibrate_force_torque_sensor(request: ForceTorqueCalibrationRequest, background_tasks: BackgroundTasks):
+    """Calibrate the force torque sensor to zero."""
+    c = get_controller()
+
+    async def calibration_task():
+        success = c.calibrate_force_torque_sensor(
+            samples=request.samples,
+            delay=request.delay
+        )
+        if not success:
+            logger.error("Failed to calibrate force torque sensor.")
+        await broadcast_status_update()
+
+    background_tasks.add_task(calibration_task)
+    return {"message": "Force torque sensor calibration started."}
+
+@app.get("/force-torque/data")
+async def get_force_torque_data():
+    """Get current force torque sensor data."""
+    c = get_controller()
+    
+    if not c.is_component_enabled('force_torque'):
+        raise HTTPException(status_code=400, detail="Force torque sensor is not enabled.")
+    
+    data = c.get_force_torque_data()
+    if data is None:
+        raise HTTPException(status_code=500, detail="Failed to get force torque data.")
+    
+    return {
+        "data": data,
+        "magnitude": c.get_force_torque_magnitude(),
+        "direction": c.get_force_torque_direction(),
+        "calibrated": c.force_torque_calibrated
+    }
+
+@app.get("/force-torque/status")
+async def get_force_torque_status():
+    """Get comprehensive force torque sensor status."""
+    c = get_controller()
+    
+    return c.get_force_torque_status()
+
+@app.post("/force-torque/check-safety")
+async def check_force_torque_safety():
+    """Check if force/torque exceeds safety thresholds and trigger alerts."""
+    c = get_controller()
+    
+    if not c.is_component_enabled('force_torque'):
+        raise HTTPException(status_code=400, detail="Force torque sensor is not enabled.")
+    
+    violation_detected = c.check_force_torque_safety()
+    
+    return {
+        "violation_detected": violation_detected,
+        "message": "Safety check completed."
+    }
+
+@app.post("/force-torque/move-until-force")
+async def move_until_force(request: ForceTorqueMovementRequest, background_tasks: BackgroundTasks):
+    """Move in a linear direction until a force threshold is reached."""
+    c = get_controller()
+
+    async def force_movement_task():
+        success = c.move_until_force(
+            direction=request.direction,
+            force_threshold=request.force_threshold,
+            speed=request.speed,
+            timeout=request.timeout
+        )
+        if not success:
+            logger.error("Force-controlled movement failed or timed out.")
+        await broadcast_status_update()
+
+    background_tasks.add_task(force_movement_task)
+    return {"message": "Force-controlled movement started."}
+
+@app.post("/force-torque/move-joint-until-torque")
+async def move_joint_until_torque(request: JointTorqueMovementRequest, background_tasks: BackgroundTasks):
+    """Move a specific joint until a torque threshold is reached."""
+    c = get_controller()
+
+    async def torque_movement_task():
+        success = c.move_joint_until_torque(
+            joint_id=request.joint_id,
+            target_angle=request.target_angle,
+            torque_threshold=request.torque_threshold,
+            speed=request.speed,
+            timeout=request.timeout
+        )
+        if not success:
+            logger.error("Torque-controlled joint movement failed or timed out.")
+        await broadcast_status_update()
+
+    background_tasks.add_task(torque_movement_task)
+    return {"message": "Torque-controlled joint movement started."}
 
 # WebSocket endpoint for real-time updates
 @app.websocket("/ws")

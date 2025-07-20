@@ -3,16 +3,16 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "xarm-translocation"
-version = "0.2.5"
+name = "pyxarm"
+version = "0.3.0"
 authors = [
   { name="Yang Cao", email="cyrilcaoyang@gmail.com" },
 ]
-description = "Comprehensive Python package for controlling UFACTORY xArm robots with integrated gripper and linear track support for translocation tasks"
+description = "Comprehensive Python package for controlling UFACTORY xArm robots with integrated gripper, linear track, and force torque sensor support"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.8"
-keywords = ["robotics", "xarm", "ufactory", "gripper", "linear-track", "translocation", "automation"]
+keywords = ["robotics", "xarm", "ufactory", "gripper", "linear-track", "force-torque", "automation", "pyxarm"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -50,13 +50,13 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cyrilcao/xArm5-translocation"
-Documentation = "https://github.com/cyrilcao/xArm5-translocation#readme"
-Repository = "https://github.com/cyrilcao/xArm5-translocation.git"
-Issues = "https://github.com/cyrilcao/xArm5-translocation/issues"
+Homepage = "https://github.com/cyrilcao/pyxarm"
+Documentation = "https://github.com/cyrilcao/pyxarm#readme"
+Repository = "https://github.com/cyrilcao/pyxarm.git"
+Issues = "https://github.com/cyrilcao/pyxarm/issues"
 
-# [project.scripts]
-# Note: Docker setup uses bash script at src/docker/docker_setup.sh
+[project.scripts]
+pyarm = "src.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,16 +1,33 @@
 # API Reference
 
-This document provides a detailed reference for the xArm-translocation project's RESTful API. 
+This document provides a detailed reference for the PyXArm project's RESTful API. 
 
 The API allows for comprehensive control over the xArm robot, its components, and the simulation environment.
 
-Start the server by runing xarm_api_server.py as a module at the project root folder.
+**Installation:** First install PyXArm in development mode:
+```bash
+conda run -n sdl2-robots pip install -e .
+```
+
+Start the server using the PyXArm CLI:
 
 ```bash
-python -m src.core.xarm_api_server
+# Start web interface and API server
+pyarm web
+
+# Or specify custom host/port
+pyarm web --host 0.0.0.0 --port 8080
+
+# Alternative method (without installing package)
+conda run -n sdl2-robots python -m src.cli.main web
 ```
 
 The API server runs on `http://127.0.0.1:6001` by default.
+
+**Access Points:**
+- 🌐 **Web UI**: http://localhost:6001/web/
+- 📖 **API Docs**: http://localhost:6001/docs  
+- 📡 **REST API**: http://localhost:6001
 
 ---
 
@@ -358,6 +375,218 @@ Retrieves the current status of the linear track.
 **Example**
 ```bash
 curl -X GET "http://127.0.0.1:6001/track/status"
+```
+
+### Force Torque Sensor
+
+The 6-axis force torque sensor provides three main functionalities:
+1. **Safety monitoring** - Alert when force/torque exceeds thresholds
+2. **Linear force-controlled movement** - Move until force threshold is reached (for button pressing, drawer pulling)
+3. **Joint torque-controlled movement** - Move joint until torque threshold is reached
+
+#### `POST /force-torque/enable`
+
+Enables the 6-axis force torque sensor.
+
+**Response `200 OK`**
+```json
+{ "message": "Force torque sensor enabled successfully." }
+```
+
+**Example**
+```bash
+curl -X POST "http://127.0.0.1:6001/force-torque/enable"
+```
+
+#### `POST /force-torque/disable`
+
+Disables the 6-axis force torque sensor.
+
+**Response `200 OK`**
+```json
+{ "message": "Force torque sensor disabled successfully." }
+```
+
+**Example**
+```bash
+curl -X POST "http://127.0.0.1:6001/force-torque/disable"
+```
+
+#### `POST /force-torque/calibrate`
+
+Calibrates the force torque sensor to zero.
+
+**Request Body**
+```json
+{
+    "samples": 100,
+    "delay": 0.1
+}
+```
+*   `samples` (optional): Number of calibration samples (default: 100)
+*   `delay` (optional): Delay between samples in seconds (default: 0.1)
+
+**Response `200 OK`**
+```json
+{ "message": "Force torque sensor calibration started." }
+```
+
+**Example**
+```bash
+curl -X POST "http://127.0.0.1:6001/force-torque/calibrate" -H "Content-Type: application/json" -d '{
+    "samples": 100,
+    "delay": 0.1
+}'
+```
+
+#### `GET /force-torque/data`
+
+Gets current force torque sensor data.
+
+**Response `200 OK`**
+```json
+{
+    "data": [1.2, -0.5, 15.3, 0.1, 0.2, -0.3],
+    "magnitude": {
+        "force_magnitude": 15.4,
+        "torque_magnitude": 0.37,
+        "total_magnitude": 15.4
+    },
+    "direction": {
+        "force_direction": [0.078, -0.032, 0.994],
+        "torque_direction": [0.270, 0.541, -0.811],
+        "force_magnitude": 15.4,
+        "torque_magnitude": 0.37
+    },
+    "calibrated": true
+}
+```
+*   `data`: [fx, fy, fz, tx, ty, tz] in Newtons and Nm
+*   `magnitude`: Magnitude of force and torque vectors
+*   `direction`: Normalized direction vectors (if above dead zone)
+*   `calibrated`: Whether sensor has been calibrated
+
+**Example**
+```bash
+curl -X GET "http://127.0.0.1:6001/force-torque/data"
+```
+
+#### `GET /force-torque/status`
+
+Gets comprehensive force torque sensor status.
+
+**Response `200 OK`**
+```json
+{
+    "enabled": true,
+    "calibrated": true,
+    "last_reading": [1.2, -0.5, 15.3, 0.1, 0.2, -0.3],
+    "zero_point": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "history_length": 150,
+    "alerts_active": false,
+    "magnitude": {
+        "force_magnitude": 15.4,
+        "torque_magnitude": 0.37,
+        "total_magnitude": 15.4
+    },
+    "direction": {
+        "force_direction": [0.078, -0.032, 0.994],
+        "torque_direction": [0.270, 0.541, -0.811],
+        "force_magnitude": 15.4,
+        "torque_magnitude": 0.37
+    }
+}
+```
+
+**Example**
+```bash
+curl -X GET "http://127.0.0.1:6001/force-torque/status"
+```
+
+#### `POST /force-torque/check-safety`
+
+Checks if force/torque exceeds safety thresholds and triggers alerts.
+
+**Response `200 OK`**
+```json
+{
+    "violation_detected": false,
+    "message": "Safety check completed."
+}
+```
+
+**Example**
+```bash
+curl -X POST "http://127.0.0.1:6001/force-torque/check-safety"
+```
+
+#### `POST /force-torque/move-until-force`
+
+Moves in a linear direction until a force threshold is reached.
+
+**Request Body**
+```json
+{
+    "direction": [0, 0, -1],
+    "force_threshold": 20.0,
+    "speed": 50,
+    "timeout": 30.0
+}
+```
+*   `direction`: Direction vector [x, y, z] (normalized)
+*   `force_threshold` (optional): Force threshold in Newtons (default from config)
+*   `speed` (optional): Movement speed in mm/s (default from config)
+*   `timeout`: Maximum time to wait in seconds
+
+**Response `200 OK`**
+```json
+{ "message": "Force-controlled movement started." }
+```
+
+**Example**
+```bash
+curl -X POST "http://127.0.0.1:6001/force-torque/move-until-force" -H "Content-Type: application/json" -d '{
+    "direction": [0, 0, -1],
+    "force_threshold": 20.0,
+    "speed": 50,
+    "timeout": 30.0
+}'
+```
+
+#### `POST /force-torque/move-joint-until-torque`
+
+Moves a specific joint until a torque threshold is reached.
+
+**Request Body**
+```json
+{
+    "joint_id": 5,
+    "target_angle": 45.0,
+    "torque_threshold": 2.0,
+    "speed": 10,
+    "timeout": 30.0
+}
+```
+*   `joint_id`: Joint number (1-7)
+*   `target_angle`: Target angle in degrees
+*   `torque_threshold` (optional): Torque threshold in Nm (default from config)
+*   `speed` (optional): Movement speed in deg/s (default from config)
+*   `timeout`: Maximum time to wait in seconds
+
+**Response `200 OK`**
+```json
+{ "message": "Torque-controlled joint movement started." }
+```
+
+**Example**
+```bash
+curl -X POST "http://127.0.0.1:6001/force-torque/move-joint-until-torque" -H "Content-Type: application/json" -d '{
+    "joint_id": 5,
+    "target_angle": 45.0,
+    "torque_threshold": 2.0,
+    "speed": 10,
+    "timeout": 30.0
+}'
 ```
 
 ---

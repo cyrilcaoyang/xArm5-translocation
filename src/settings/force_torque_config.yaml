@@ -1,0 +1,64 @@
+# Force Torque Sensor Configuration
+# For xArm 6-Axis Force Torque Sensor V2.5.2
+
+# Sensor enable/disable
+enable: true
+
+# Safety thresholds for force monitoring (Newtons)
+safety_thresholds:
+  force:
+    x: 50.0      # Forward/backward force threshold
+    y: 50.0      # Left/right force threshold  
+    z: 100.0     # Up/down force threshold
+    magnitude: 120.0  # Total force magnitude threshold
+  
+  torque:
+    x: 5.0       # Roll torque threshold (Nm)
+    y: 5.0       # Pitch torque threshold (Nm)
+    z: 5.0       # Yaw torque threshold (Nm)
+    magnitude: 8.0   # Total torque magnitude threshold
+
+# Operation thresholds for controlled movements
+operation_thresholds:
+  # Linear movement until force threshold (for button pressing, drawer pulling)
+  linear_force:
+    x: 30.0      # Force threshold for X-axis movement
+    y: 30.0      # Force threshold for Y-axis movement
+    z: 50.0      # Force threshold for Z-axis movement
+  
+  # Joint rotation until torque threshold (for joint-specific operations)
+  joint_torque:
+    j1: 3.0      # Torque threshold for joint 1
+    j2: 3.0      # Torque threshold for joint 2
+    j3: 3.0      # Torque threshold for joint 3
+    j4: 2.0      # Torque threshold for joint 4
+    j5: 2.0      # Torque threshold for joint 5
+    j6: 2.0      # Torque threshold for joint 6
+    j7: 2.0      # Torque threshold for joint 7
+
+# Calibration settings
+calibration:
+  auto_calibrate: true
+  calibration_samples: 100
+  calibration_delay: 0.1  # seconds between samples
+  zero_threshold: 0.5     # threshold for considering sensor "zeroed"
+
+# Monitoring settings
+monitoring:
+  update_rate: 100        # Hz - how often to read sensor data
+  filter_enabled: true    # Enable low-pass filtering
+  filter_cutoff: 10.0     # Hz - cutoff frequency for low-pass filter
+  history_length: 1000    # Number of samples to keep in history
+
+# Alert settings
+alerts:
+  enable_visual: true     # Show visual alerts in UI
+  enable_audio: false     # Play audio alerts
+  enable_logging: true    # Log alerts to file
+  alert_cooldown: 1.0     # seconds between repeated alerts
+
+# Direction detection settings
+direction_detection:
+  enable: true
+  dead_zone: 2.0          # Minimum force/torque to consider as "detected"
+  smoothing_samples: 5     # Number of samples to average for direction detection 
