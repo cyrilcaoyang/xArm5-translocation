@@ -56,7 +56,7 @@ Repository = "https://github.com/cyrilcao/pyxarm.git"
 Issues = "https://github.com/cyrilcao/pyxarm/issues"
 
 [project.scripts]
-pyarm = "src.cli.main:main"
+pyxarm = "cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

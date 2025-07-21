@@ -1,12 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM loaded, checking elements...');
-    console.log('connection-details exists:', !!document.getElementById('connection-details'));
-    console.log('status-container exists:', !!document.getElementById('status-container'));
-    console.log('status-main exists:', !!document.getElementById('status-main'));
-    
     // Create connection-details element if it doesn't exist
     if (!document.getElementById('connection-details')) {
-        console.log('Creating missing connection-details element');
         const statusContainer = document.getElementById('status-container');
         const connectionDetails = document.createElement('div');
         connectionDetails.id = 'connection-details';
@@ -14,8 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
         statusContainer.appendChild(connectionDetails);
     }
     
-    const API_BASE_URL = `${window.location.protocol}//${window.location.host}`;
-    const WS_URL = `ws://${window.location.host}/ws`;
+    const API_BASE_URL = 'http://localhost:8000';
+    const WS_URL = 'ws://localhost:8000/ws';
 
     const connectBtn = document.getElementById('connect-btn');
     const disconnectBtn = document.getElementById('disconnect-btn');
@@ -23,20 +17,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const safetyLevelSelect = document.getElementById('safety-level-select');
     const simulationModeCheckbox = document.getElementById('simulation-mode');
 
-    const movePosBtn = document.getElementById('move-pos-btn');
-    const moveJointsBtn = document.getElementById('move-joints-btn');
-    const moveLocBtn = document.getElementById('move-loc-btn');
     const homeBtn = document.getElementById('home-btn');
     const stopBtn = document.getElementById('stop-btn');
+    const clearErrorsBtn = document.getElementById('clear-errors-btn');
 
     const openGripperBtn = document.getElementById('open-gripper-btn');
     const closeGripperBtn = document.getElementById('close-gripper-btn');
+    const enableGripperBtn = document.getElementById('enable-gripper-btn');
 
-    const locationSelect = document.getElementById('location-select');
     const trackLocationSelect = document.getElementById('track-location-select');
     const moveTrackLocBtn = document.getElementById('move-track-loc-btn');
+    const trackSpeedInput = document.getElementById('track-speed');
+    const predefinedPositionSelect = document.getElementById('predefined-position-select');
+    const movePredefinedBtn = document.getElementById('move-predefined-btn');
+    const moveSpeedInput = document.getElementById('move-speed');
+    const realtimeJointsDisplay = document.getElementById('realtime-joints');
+    const enableRobotBtn = document.getElementById('enable-robot-btn');
+    const moveToStrokeBtn = document.getElementById('move-to-stroke-btn');
+    const gripperStrokeInput = document.getElementById('gripper-stroke');
 
     let socket;
+    let statusRefreshInterval = null;
+    let isRobotMoving = false;
+    let lastJointPositions = null;
+    let movementDetectionThreshold = 0.1; // degrees
 
     // --- API Helper ---
     async function apiRequest(endpoint, method = 'GET', body = null, skipErrorDisplay = false) {
@@ -72,8 +76,70 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Dynamic Refresh Rate Management ---
+    function startMovementRefresh() {
+        if (statusRefreshInterval) {
+            clearInterval(statusRefreshInterval);
+        }
+        // 10Hz refresh during movement
+        statusRefreshInterval = setInterval(fetchAndUpdateStatus, 100);
+    }
+
+    function startIdleRefresh() {
+        if (statusRefreshInterval) {
+            clearInterval(statusRefreshInterval);
+        }
+        // 0.5Hz refresh when idle
+        statusRefreshInterval = setInterval(fetchAndUpdateStatus, 2000);
+    }
+
+    function stopRefresh() {
+        if (statusRefreshInterval) {
+            clearInterval(statusRefreshInterval);
+            statusRefreshInterval = null;
+        }
+    }
+
+    function detectMovement(currentJoints) {
+        if (!lastJointPositions || !currentJoints || !Array.isArray(currentJoints)) {
+            lastJointPositions = currentJoints;
+            return false;
+        }
+
+        // Check if any joint has moved more than threshold
+        const isMoving = currentJoints.some((joint, index) => {
+            if (index >= lastJointPositions.length) return false;
+            return Math.abs(joint - lastJointPositions[index]) > movementDetectionThreshold;
+        });
+
+        lastJointPositions = [...currentJoints];
+        return isMoving;
+    }
+
+    function updateRefreshRate(currentJoints) {
+        const wasMoving = isRobotMoving;
+        isRobotMoving = detectMovement(currentJoints);
+
+        // Only change refresh rate when movement state changes
+        if (isRobotMoving && !wasMoving) {
+            startMovementRefresh();
+        } else if (!isRobotMoving && wasMoving) {
+            // Add a small delay before switching to idle to avoid rapid switching
+            setTimeout(() => {
+                if (!isRobotMoving) { // Double-check we're still not moving
+                    startIdleRefresh();
+                }
+            }, 500);
+        }
+    }
+
     // --- Status Fetching ---
     async function fetchAndUpdateStatus() {
+        // Check if DOM is ready before proceeding
+        if (document.readyState !== 'complete') {
+            return;
+        }
+        
         try {
             const statusData = await apiRequest('/status', 'GET', null, true); // Skip error display
             if (statusData) {
@@ -89,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     },
                     current_position: statusData.current_position,
                     current_joints: statusData.current_joints,
-                    track_position: null // Will be fetched separately if needed
+                    track_position: statusData.track_position
                 };
                 updateStatusUI(transformedData);
             }
@@ -103,50 +169,223 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- UI Updates ---
     function updateStatusUI(data) {
-        // The `is_alive` flag is now the source of truth from the backend.
-        const isConnected = data.is_alive === true;
+        try {
+            // Quick check: if basic elements don't exist, DOM might not be ready
+            if (!document.getElementById('arm-state') || !document.getElementById('status-text')) {
+                console.error('DOM elements not ready, skipping status update');
+                return;
+            }
+            
+            // Check if all required DOM elements exist
+            const requiredElements = [
+                'arm-state', 'gripper-state', 'track-state', 'robot-mode', 
+                'current-position', 'last-error'
+            ];
+            
+            const missingElements = requiredElements.filter(id => {
+                const element = document.getElementById(id);
+                return !element;
+            });
+            
+            if (missingElements.length > 0) {
+                console.error('Missing required DOM elements:', missingElements);
+                console.error('DOM ready state:', document.readyState);
+                return;
+            }
+            
+            // The `is_alive` flag is now the source of truth from the backend.
+            const isConnected = data.is_alive === true;
 
-        // Update connection text and light
-        if (isConnected && data.connection_details) {
-            updateStatusText('Connected');
-            const details = data.connection_details;
-            const subtext = `${details.host}:${details.port} (${details.profile_name}${details.simulation_mode ? ' - Simulation' : ''})`;
-            showMessage(subtext, 'info');
-        } else {
-            updateStatusText('Disconnected');
-            clearMessage();
+            // Update connection text and light
+            try {
+                if (isConnected && data.connection_details) {
+                    updateStatusText('Connected');
+                    const details = data.connection_details;
+                    const subtext = `${details.host}:${details.port} (${details.profile_name}${details.simulation_mode ? ' - Simulation' : ''})`;
+                    showMessage(subtext, 'info');
+                } else {
+                    updateStatusText('Disconnected');
+                    clearMessage();
+                }
+            } catch (error) {
+                console.error('Error updating connection status:', error);
+            }
+            
+            // Update status grid with error handling
+            const systemStatus = data.system_status || {};
+            const componentStates = data.component_states || {};
+
+            // Helper function to safely update element text
+            const safeSetText = (elementId, text) => {
+                try {
+                    const element = document.getElementById(elementId);
+                    
+                    if (element) {
+                        element.textContent = text;
+                    } else {
+                        console.error(`Element with id '${elementId}' not found`);
+                    }
+                } catch (error) {
+                    console.error(`Unexpected error in safeSetText for '${elementId}':`, error);
+                }
+            };
+
+            safeSetText('arm-state', componentStates.arm || 'N/A');
+            
+            // Update gripper state and name - show name regardless of state
+            const gripperState = componentStates.gripper || 'N/A';
+            const gripperConfig = data.connection_details?.gripper_config || {};
+            const gripperName = gripperConfig.name || data.connection_details?.gripper_type || 'N/A';
+            const hasStrokeControl = gripperConfig.has_stroke_control || false;
+            
+            // Always show gripper name in the info section
+            safeSetText('gripper-type-display', gripperName);
+            safeSetText('gripper-state-display', gripperState);
+            
+            if (gripperState === 'enabled' && data.connection_details?.gripper_type) {
+                safeSetText('gripper-state', `${gripperName} (${gripperState})`);
+                
+                // Enable/disable stroke control based on gripper configuration
+                if (hasStrokeControl) {
+                    const strokeRange = gripperConfig.stroke_range || {};
+                    const minStroke = strokeRange.min || 0;
+                    const maxStroke = strokeRange.max || 800;
+                    
+                    if (gripperStrokeInput) {
+                        gripperStrokeInput.disabled = false;
+                        gripperStrokeInput.placeholder = `${minStroke}-${maxStroke}`;
+                        gripperStrokeInput.min = minStroke.toString();
+                        gripperStrokeInput.max = maxStroke.toString();
+                    }
+                    if (moveToStrokeBtn) {
+                        moveToStrokeBtn.disabled = false;
+                        moveToStrokeBtn.classList.remove('btn-secondary');
+                        moveToStrokeBtn.classList.add('btn-primary');
+                    }
+                } else {
+                    // No stroke control - disable and gray out
+                    if (gripperStrokeInput) {
+                        gripperStrokeInput.disabled = true;
+                        gripperStrokeInput.placeholder = "";
+                        gripperStrokeInput.value = "";
+                    }
+                    if (moveToStrokeBtn) {
+                        moveToStrokeBtn.disabled = true;
+                        moveToStrokeBtn.classList.remove('btn-primary');
+                        moveToStrokeBtn.classList.add('btn-secondary');
+                    }
+                }
+            } else {
+                safeSetText('gripper-state', gripperState);
+                if (gripperStrokeInput) {
+                    gripperStrokeInput.disabled = true;
+                    gripperStrokeInput.placeholder = "";
+                    gripperStrokeInput.value = "";
+                }
+                if (moveToStrokeBtn) {
+                    moveToStrokeBtn.disabled = true;
+                    moveToStrokeBtn.classList.remove('btn-primary');
+                    moveToStrokeBtn.classList.add('btn-secondary');
+                }
+            }
+
+            // Update enable button state
+            const enableGripperBtn = document.getElementById('enable-gripper-btn');
+            if (enableGripperBtn) {
+                if (gripperState === 'enabled') {
+                    enableGripperBtn.textContent = 'Enable';
+                    enableGripperBtn.disabled = true;
+                    enableGripperBtn.classList.remove('btn-success');
+                    enableGripperBtn.classList.add('btn-secondary');
+                } else {
+                    enableGripperBtn.textContent = 'Enable';
+                    enableGripperBtn.disabled = false;
+                    enableGripperBtn.classList.remove('btn-secondary');
+                    enableGripperBtn.classList.add('btn-success');
+                }
+            }
+            
+            // Update track state to show position when enabled
+            const trackState = componentStates.track || 'N/A';
+            if (trackState === 'enabled' && data.track_position !== null && data.track_position !== undefined) {
+                safeSetText('track-state', `${trackState} (${data.track_position.toFixed(2)}mm)`);
+                safeSetText('track-position-display', `${data.track_position.toFixed(2)} mm`);
+            } else {
+                safeSetText('track-state', trackState);
+                safeSetText('track-position-display', 'N/A');
+            }
+            
+            safeSetText('robot-mode', data.connection_details?.simulation_mode ? 'Simulation' : 'Hardware');
+
+            const formatArray = (arr) => arr ? `[${arr.map(n => n.toFixed(2)).join(', ')}]` : '[...]';
+            safeSetText('current-position', formatArray(data.current_position));
+            safeSetText('last-error', systemStatus.last_error || 'None');
+            
+            // Update real-time joints display
+            // TODO: The real-time xArm joint position display is very slow - needs optimization
+            if (realtimeJointsDisplay) {
+                if (data.current_joints && Array.isArray(data.current_joints) && data.current_joints.length > 0) {
+                    const jointsText = data.current_joints.map(n => Number(n).toFixed(1)).join(', ');
+                    const movingIndicator = isRobotMoving ? ' ●' : '';
+                    realtimeJointsDisplay.value = `[${jointsText}]${movingIndicator}`;
+                    
+                    // Update refresh rate based on movement detection
+                    updateRefreshRate(data.current_joints);
+                } else {
+                    realtimeJointsDisplay.value = '[No data]';
+                }
+            }
+            
+            // Set the state of all controls based on the connection status
+            try {
+                setControlsState(isConnected);
+                
+                // Manage refresh rate based on connection state
+                if (!isConnected && statusRefreshInterval) {
+                    // Stop refreshing when disconnected to save resources
+                    stopRefresh();
+                } else if (isConnected && !statusRefreshInterval) {
+                    // Resume refreshing when reconnected
+                    startIdleRefresh();
+                }
+            } catch (error) {
+                console.error('Error setting controls state:', error);
+            }
+            
+        } catch (error) {
+            console.error('Fatal error in updateStatusUI:', error);
+            console.error('Stack trace:', error.stack);
         }
-        
-        // Update status grid
-        const systemStatus = data.system_status || {};
-        const componentStates = data.component_states || {};
-
-        document.getElementById('arm-state').textContent = componentStates.arm || 'N/A';
-        document.getElementById('gripper-state').textContent = componentStates.gripper || 'N/A';
-        document.getElementById('track-state').textContent = componentStates.track || 'N/A';
-        document.getElementById('robot-mode').textContent = data.connection_details?.simulation_mode ? 'Simulation' : 'Hardware';
-
-        const formatArray = (arr) => arr ? `[${arr.map(n => n.toFixed(2)).join(', ')}]` : '[...]';
-        document.getElementById('current-position').textContent = formatArray(data.current_position);
-        document.getElementById('current-joints').textContent = formatArray(data.current_joints);
-        document.getElementById('track-position').textContent = data.track_position !== null && data.track_position !== undefined ? data.track_position.toFixed(2) : 'N/A';
-        document.getElementById('last-error').textContent = systemStatus.last_error || 'None';
-        
-        // Set the state of all controls based on the connection status
-        setControlsState(isConnected);
     }
     
     function updateStatusText(text) {
         const statusText = document.getElementById('status-text');
         const statusLight = document.getElementById('status-light');
         
-        statusText.innerHTML = text;
-        // Set status light based on connection state
-        const lowerText = text.toLowerCase();
-        if (lowerText === 'connected') {
-            statusLight.className = 'status-light online';
+        if (statusText) {
+            try {
+                statusText.innerHTML = text;
+            } catch (error) {
+                console.error('Error setting status text:', error);
+            }
         } else {
-            statusLight.className = 'status-light offline';
+            console.error("Element with id 'status-text' not found");
+        }
+        
+        if (statusLight) {
+            try {
+                // Set status light based on connection state
+                const lowerText = text.toLowerCase();
+                if (lowerText === 'connected') {
+                    statusLight.className = 'status-light online';
+                } else {
+                    statusLight.className = 'status-light offline';
+                }
+            } catch (error) {
+                console.error('Error setting status light:', error);
+            }
+        } else {
+            console.error("Element with id 'status-light' not found");
         }
         // Do not clear error message here; let it persist until next status change
     }
@@ -172,18 +411,60 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setControlsState(enabled) {
-        // Enable/disable all control buttons based on connection state
+        // Enable/disable control buttons based on connection state
         const controlButtons = [
-            disconnectBtn, movePosBtn, moveJointsBtn, moveLocBtn, 
-            homeBtn, stopBtn, openGripperBtn, closeGripperBtn, moveTrackLocBtn
+            homeBtn, stopBtn, clearErrorsBtn, openGripperBtn, closeGripperBtn, enableGripperBtn, moveTrackLocBtn, 
+            movePredefinedBtn, moveToStrokeBtn
+        ];
+        
+        // Enable/disable input fields
+        const controlInputs = [
+            moveSpeedInput, trackSpeedInput, gripperStrokeInput
         ];
         
         controlButtons.forEach(btn => {
-            if (btn) btn.disabled = !enabled;
+            if (btn) {
+                btn.disabled = !enabled;
+            }
         });
         
-        // Connect button is opposite - enabled when disconnected, disabled when connected
-        if (connectBtn) connectBtn.disabled = enabled;
+        controlInputs.forEach(input => {
+            if (input) {
+                input.disabled = !enabled;
+            }
+        });
+        
+        // Special handling for Enable Robot button
+        // Available when connected but arm is not enabled (after emergency stop)
+        if (enableRobotBtn) {
+            const isConnected = enabled; // enabled means robot is connected and operational
+            const shouldShowEnable = !isConnected; // Show enable when not fully operational
+            
+            enableRobotBtn.disabled = !shouldShowEnable;
+            if (shouldShowEnable) {
+                enableRobotBtn.textContent = 'Enable';
+                enableRobotBtn.classList.remove('btn-secondary');
+                enableRobotBtn.classList.add('btn-success');
+            } else {
+                enableRobotBtn.textContent = 'Enable';
+                enableRobotBtn.classList.remove('btn-success');
+                enableRobotBtn.classList.add('btn-secondary');
+            }
+        }
+        
+        // Connect button: enabled when disconnected, disabled when connected
+        if (connectBtn) {
+            connectBtn.disabled = enabled;
+        } else {
+            console.error("Connect button element not found");
+        }
+        
+        // Disconnect button: enabled when connected, disabled when disconnected
+        if (disconnectBtn) {
+            disconnectBtn.disabled = !enabled;
+        } else {
+            console.error("Disconnect button element not found");
+        }
     }
 
     // --- WebSocket Handling ---
@@ -196,17 +477,18 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.onmessage = (event) => {
             const message = JSON.parse(event.data);
             if (message.type === 'status_update') {
-                updateStatusUI(message.data);
+                // Only update UI if DOM is ready
+                if (document.readyState === 'complete') {
+                    updateStatusUI(message.data);
+                } else {
+                    setTimeout(() => updateStatusUI(message.data), 100);
+                }
             }
         };
         socket.onclose = () => {
             console.log('WebSocket disconnected.');
-            // Only update UI if there's no error currently shown
-            const statusText = document.getElementById('status-text');
-            if (!statusText.textContent.toLowerCase().includes('error')) {
-                setControlsState(false);
-                updateStatusText('Disconnected');
-            }
+            // Fetch current status from API instead of assuming disconnected
+            setTimeout(() => fetchAndUpdateStatus(), 100);
         };
         socket.onerror = (error) => console.error('WebSocket error:', error);
     }
@@ -219,16 +501,27 @@ document.addEventListener('DOMContentLoaded', () => {
             configSelect.innerHTML = profiles.map(p => `<option value="${p}">${p.replace(/_/g, ' ').toUpperCase()}</option>`).join('');
         }
 
-        // Load arm locations
+        // Load arm locations with position values for both dropdowns
         const armLocations = await apiRequest('/locations');
-        if (armLocations) {
-            locationSelect.innerHTML = armLocations.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('');
+        if (armLocations && armLocations.locations) {
+            // Populate predefined positions dropdown
+            predefinedPositionSelect.innerHTML = armLocations.locations.map(loc => {
+                // Get position values if available
+                const positions = armLocations.positions ? armLocations.positions[loc] : null;
+                const displayText = positions ? `${loc} [${positions.join(', ')}]` : loc;
+                return `<option value="${loc}">${displayText}</option>`;
+            }).join('');
         }
         
-        // Load track locations
+        // Load track locations with position values
         const trackLocations = await apiRequest('/track/locations');
-        if (trackLocations) {
-            trackLocationSelect.innerHTML = trackLocations.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('');
+        if (trackLocations && trackLocations.locations) {
+            trackLocationSelect.innerHTML = trackLocations.locations.map(loc => {
+                // Get position values if available
+                const positions = trackLocations.positions ? trackLocations.positions[loc] : null;
+                const displayText = positions ? `${loc} (${positions}mm)` : loc;
+                return `<option value="${loc}">${displayText}</option>`;
+            }).join('');
         }
     }
     
@@ -258,113 +551,97 @@ document.addEventListener('DOMContentLoaded', () => {
         const response = await apiRequest('/connect', 'POST', body);
         
         if (response && response.message) {
-            // Extract connection details from the connect response
-            const details = response.connection_details;
-            if (details) {
-                const connectedText = `${details.host}:${details.port} (${details.profile_name}${details.simulation_mode ? ' - Simulation' : ''})`;
-                updateStatusText('Connected');
-                showMessage(connectedText, 'info');
-            } else {
-                updateStatusText('Connected');
-                clearMessage();
-            }
-            
-            // Enable controls since connection was successful
-            setControlsState(true);
+            // Connection successful - fetch updated status from API
+            setTimeout(() => fetchAndUpdateStatus(), 500);
             
             // Start WebSocket for real-time updates
             connectWebSocket();
-            
-            // Fetch current status to get detailed state info
-            setTimeout(() => fetchAndUpdateStatus(), 500);
         } else {
-            // Connection failed - re-enable connect button
-            connectBtn.disabled = false;
-            setControlsState(false);
+            // Connection failed - re-enable connect button and fetch current status
+            setTimeout(() => fetchAndUpdateStatus(), 100);
         }
     });
 
     disconnectBtn.addEventListener('click', async () => {
-        console.log('Disconnect button clicked');
         const response = await apiRequest('/disconnect', 'POST');
         
         // Close WebSocket connection first to prevent it from overriding our status update
         if (socket) socket.close();
         
-        // Always update UI state regardless of response (in case of server issues)
-        setControlsState(false);  // Disable disconnect and other controls, enable connect
-        updateStatusText('Disconnected');
-        clearMessage();
+        // Fetch updated status from API to update UI
+        setTimeout(() => fetchAndUpdateStatus(), 100);
         
         if (response && response.message) {
             console.log('Disconnect response:', response.message);
         }
     });
 
-    movePosBtn.addEventListener('click', () => {
-        const body = {
-            x: parseFloat(document.getElementById('pos-x').value),
-            y: parseFloat(document.getElementById('pos-y').value),
-            z: parseFloat(document.getElementById('pos-z').value),
-            roll: parseFloat(document.getElementById('pos-roll').value) || null,
-            pitch: parseFloat(document.getElementById('pos-pitch').value) || null,
-            yaw: parseFloat(document.getElementById('pos-yaw').value) || null,
-        };
-        apiRequest('/move/position', 'POST', body);
-    });
-
-    moveJointsBtn.addEventListener('click', () => {
-        const angles = document.getElementById('joint-angles').value.split(',').map(Number);
-        apiRequest('/move/joints', 'POST', { angles });
-    });
-    
-    moveLocBtn.addEventListener('click', () => {
-        const location_name = locationSelect.value;
-        apiRequest('/move/location', 'POST', { location_name });
-    });
-
     homeBtn.addEventListener('click', () => {
-        console.log('Home button clicked');
         apiRequest('/move/home', 'POST');
     });
     stopBtn.addEventListener('click', () => {
-        console.log('Stop button clicked');
         apiRequest('/move/stop', 'POST');
+    });
+    clearErrorsBtn.addEventListener('click', () => {
+        apiRequest('/clear/errors', 'POST');
+    });
+    
+    enableRobotBtn.addEventListener('click', () => {
+        apiRequest('/robot/enable', 'POST');
     });
 
     openGripperBtn.addEventListener('click', () => apiRequest('/gripper/open', 'POST', {}));
     closeGripperBtn.addEventListener('click', () => apiRequest('/gripper/close', 'POST', {}));
     
-    moveTrackLocBtn.addEventListener('click', () => {
-        const location_name = trackLocationSelect.value;
-        apiRequest('/track/move/location', 'POST', { location_name });
+    enableGripperBtn.addEventListener('click', () => {
+        apiRequest('/component/enable', 'POST', { component: 'gripper' });
     });
     
-    // --- Tabs ---
-    window.openTab = (evt, tabName) => {
-        const tabcontent = document.getElementsByClassName("tab-content");
-        for (let i = 0; i < tabcontent.length; i++) {
-            tabcontent[i].style.display = "none";
-            tabcontent[i].classList.remove("active");
-        }
-        const tablinks = document.getElementsByClassName("tab-link");
-        for (let i = 0; i < tablinks.length; i++) {
-            tablinks[i].classList.remove("active");
-        }
-        document.getElementById(tabName).style.display = "block";
-        document.getElementById(tabName).classList.add("active");
-        evt.currentTarget.classList.add("active");
-    };
+    moveTrackLocBtn.addEventListener('click', () => {
+        const location_name = trackLocationSelect.value;
+        const speed = parseFloat(trackSpeedInput.value) || null;
+        apiRequest('/track/move/location', 'POST', { location_name, speed });
+    });
 
+    movePredefinedBtn.addEventListener('click', () => {
+        const location_name = predefinedPositionSelect.value;
+        const speed = moveSpeedInput ? parseInt(moveSpeedInput.value) || 20 : 20;
+        apiRequest('/move/location', 'POST', { 
+            location_name, 
+            speed,
+            check_collision: true,
+            wait: true 
+        });
+    });
+
+    moveToStrokeBtn.addEventListener('click', () => {
+        const stroke = parseFloat(gripperStrokeInput.value);
+        const min = parseFloat(gripperStrokeInput.min) || 0;
+        const max = parseFloat(gripperStrokeInput.max) || 1000;
+        
+        if (isNaN(stroke)) {
+            showMessage('Please enter a valid stroke value.', 'error');
+            return;
+        }
+        
+        if (stroke < min || stroke > max) {
+            showMessage(`Stroke value must be between ${min} and ${max}.`, 'error');
+            return;
+        }
+        
+        apiRequest('/gripper/move/stroke', 'POST', { stroke });
+    });
+    
     // --- Initialization ---
-    setControlsState(false);
+    fetchAndUpdateStatus();
+    connectWebSocket();
     loadInitialData().catch(console.error);
     
-    // Check current connection status on page load (after a short delay)
-    setTimeout(() => {
-        fetchAndUpdateStatus().catch(() => {
-            // If status check fails, assume disconnected (which is the default)
-            console.log('Initial status check failed - assuming disconnected state');
-        });
-    }, 100);
+    // Initialize real-time joints display
+    if (realtimeJointsDisplay) {
+        realtimeJointsDisplay.value = '[Connecting...]';
+    }
+    
+    // Start with idle refresh rate (will automatically switch to 10Hz during movement)
+    startIdleRefresh();
 }); 

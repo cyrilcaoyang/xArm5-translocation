@@ -1,3 +1,15 @@
-Speed: 200
-Acc: 1000 
-POSITIONS: [0, 50, 175, 350, 550, 700]
+Speed: 500
+Acc: 1000
+Range:
+  min: 0
+  max: 1000
+  units: "mm"
+
+# Named locations for the linear track
+locations:
+  Home: 0
+  Local_1: 50
+  Local_2: 200
+  Local_3: 375
+  Local_4: 550
+  Local_5: 700

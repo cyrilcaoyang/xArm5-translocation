@@ -58,7 +58,7 @@ class TestDockerIntegration:
             
             position = docker_controller.get_current_position()
             assert position is not None
-                
+            
             joints = docker_controller.get_current_joints()
             assert joints is not None
             
@@ -69,7 +69,7 @@ class TestDockerIntegration:
         """Test error handling with Docker simulator."""
         if not is_docker_available():
             pytest.skip("Docker simulator not available")
-
+        
         success = docker_controller.initialize()
         assert success, "Failed to initialize controller for error handling test"
         
@@ -88,8 +88,8 @@ class TestDockerStressTest:
     def test_multiple_connections(self):
         """Test multiple connect/disconnect cycles."""
         if not is_docker_available():
-            pytest.skip("Docker simulator not available")
-
+                pytest.skip("Docker simulator not available")
+            
         for _ in range(3):
             controller = XArmController(profile_name='docker_local', auto_enable=False)
             assert controller.initialize() is True
@@ -107,7 +107,7 @@ class TestDockerComponentIsolation:
         """Fixture for initialized Docker controller."""
         if not is_docker_available():
             pytest.skip("Docker simulator not available")
-
+        
         controller = XArmController(profile_name='docker_local', auto_enable=False)
         assert controller.initialize(), "Setup: failed to initialize controller"
         yield controller
@@ -162,4 +162,4 @@ def is_docker_available():
 def test_docker_availability_marker():
     """A simple test that marks the suite based on Docker's availability."""
     if not is_docker_available():
-        pytest.fail("Docker simulator is not running or not reachable at 127.0.0.1. Please start it to run integration tests.") 
+        pytest.skip("Docker simulator is not running or not reachable at 127.0.0.1. Please start it to run integration tests.") 

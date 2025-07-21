@@ -1,22 +1,22 @@
 # API Reference
 
-This document provides a detailed reference for the PyXArm project's RESTful API. 
+This document provides a detailed reference for the PyxArm project's RESTful API. 
 
 The API allows for comprehensive control over the xArm robot, its components, and the simulation environment.
 
-**Installation:** First install PyXArm in development mode:
+**Installation:** First install PyxArm in development mode:
 ```bash
 conda run -n sdl2-robots pip install -e .
 ```
 
-Start the server using the PyXArm CLI:
+Start the server using the PyxArm CLI:
 
 ```bash
 # Start web interface and API server
-pyarm web
+pyxarm web
 
 # Or specify custom host/port
-pyarm web --host 0.0.0.0 --port 8080
+pyxarm web --host 0.0.0.0 --port 8080
 
 # Alternative method (without installing package)
 conda run -n sdl2-robots python -m src.cli.main web

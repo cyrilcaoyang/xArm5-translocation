@@ -1,0 +1,68 @@
+# Gripper Configuration
+# This file defines all supported gripper types and their settings
+# The system will automatically detect and configure the appropriate gripper
+---
+
+# Bio Gripper Configuration
+bio:
+  name: "BioGripper Gen1"
+  type: "bio"
+  has_stroke_control: false
+  speed: 300
+  open_position: 850
+  close_position: 0
+  capabilities:
+    - "open_close"
+  description: "UFACTORY Bio Gripper without stroke control"
+
+# Standard Gripper Configuration  
+standard:
+  name: "xArm Gripper"
+  type: "standard"
+  has_stroke_control: true
+  speed: 300
+  stroke_range:
+    min: 0
+    max: 800
+  open_position: 800
+  close_position: 0
+  capabilities:
+    - "open_close"
+    - "stroke_control"
+  description: "UFACTORY Standard Gripper with stroke control"
+
+# RobotIQ Gripper Configuration
+robotiq:
+  name: "RobotIQ 2F-85"
+  type: "robotiq"
+  has_stroke_control: true
+  speed: 255
+  stroke_range:
+    min: 0
+    max: 85
+  open_position: 85
+  close_position: 0
+  capabilities:
+    - "open_close"
+    - "stroke_control"
+    - "force_control"
+  description: "RobotIQ 2F-85 Gripper with advanced features"
+
+# Vacuum Gripper Configuration
+vacuum:
+  name: "Vacuum Gripper Pro"
+  type: "vacuum"
+  has_stroke_control: false
+  speed: 100
+  capabilities:
+    - "suction_control"
+  description: "UFACTORY Vacuum Gripper"
+
+# Default settings for unknown grippers
+default:
+  name: "Unknown Gripper"
+  type: "unknown"
+  has_stroke_control: false
+  speed: 300
+  capabilities: []
+  description: "Unknown or unsupported gripper type" 

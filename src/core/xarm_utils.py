@@ -468,9 +468,9 @@ HARDWARE_LIMITS = {
 
 # Joint limits for different xArm models (degrees)
 DEFAULT_JOINT_LIMITS = {
-    5: [(-360, 360), (-118, 120), (-225, 11), (-180, 180), (-180, 180)],
-    6: [(-360, 360), (-118, 120), (-225, 11), (-180, 180), (-180, 180), (-360, 360)],
-    7: [(-360, 360), (-118, 120), (-225, 11), (-180, 180), (-180, 180), (-360, 360), (-180, 180)]
+    5: [(-360, 360), (-118, 120), (-225, 11), (-97, 180), (-360, 360)],
+    6: [(-360, 360), (-118, 120), (-225, 11), (-360, 360), (-97, 180), (-360, 360)],
+    7: [(-360, 360), (-118, 120), (-360, 360), (-11, 225),(-360, 360), (-97, 180), (-360, 360)],
 }
 
 # Default performance thresholds
@@ -670,4 +670,4 @@ def check_operation_result(code: int, operation_name: str, arm_state: Optional[i
     if code is None or code == 0:
         return True
         
-    return check_return_code(code, operation_name, arm_state, error_code) 
+        return check_return_code(code, operation_name, arm_state, error_code)

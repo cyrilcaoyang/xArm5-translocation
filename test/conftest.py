@@ -86,7 +86,7 @@ def mock_config_files(monkeypatch):
             'default_profile': 'test_profile',
             'profiles': {
                 'test_profile': {
-                    'host': '127.0.0.1',
+        'host': '127.0.0.1',
                     'model': 6
                 }
             }
@@ -94,9 +94,9 @@ def mock_config_files(monkeypatch):
         'bio_gripper_config': {'GRIPPER_SPEED': 300},
         'location_config': {
             'locations': {
-                'home': {'x': 300, 'y': 0, 'z': 300, 'roll': 180, 'pitch': 0, 'yaw': 0},
-                'pickup': {'x': 400, 'y': 100, 'z': 200, 'roll': 180, 'pitch': 0, 'yaw': 0}
-            }
+        'home': {'x': 300, 'y': 0, 'z': 300, 'roll': 180, 'pitch': 0, 'yaw': 0},
+        'pickup': {'x': 400, 'y': 100, 'z': 200, 'roll': 180, 'pitch': 0, 'yaw': 0}
+    }
         },
         'linear_track_config': {'Speed': 200, 'Acc': 1000},
         'safety_config': {}

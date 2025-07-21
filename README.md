@@ -1,4 +1,4 @@
-# PyXArm - xArm Robot Control Package
+# PyxArm - xArm Robot Control Package
 
 A comprehensive Python package for controlling UFACTORY xArm robotic arms with integrated gripper, linear track, and force torque sensor support. Features unified control, multiple simulation modes, and a professional three-stage testing strategy.
 
@@ -16,15 +16,11 @@ A comprehensive Python package for controlling UFACTORY xArm robotic arms with i
 
 ### Installation
 ```bash
-# Install dependencies
-conda run -n sdl2-robots pip install fastapi uvicorn websockets
+# Prepare and activate your python enviroment, and install PyxArm in editable mode
+pip install -e .
 
-# Install PyXArm in development mode
-conda run -n sdl2-robots pip install -e .
-
-# Install xArm Python SDK (for real hardware)
-git clone https://github.com/xArm-Developer/xArm-Python-SDK.git
-cd xArm-Python-SDK && python setup.py install
+# Or, install PyxArm in development mode with pytests
+pip install -e ".[dev]"
 ```
 
 ### Basic Usage
@@ -50,26 +46,26 @@ if controller.initialize():
 # Run software simulation
 python src/examples/demo_software_sim.py
 
-# Run Docker simulation (after starting container)
-src/docker/docker_setup.sh start 7
+# Run Docker simulation (after starting container, in this case "5" for xArm5)
+src/docker/docker_setup.sh start 5
 python src/examples/demo_docker_sim.py
 
 # Run force torque sensor demo
-conda run -n sdl2-robots python examples/demo_force_torque.py --simulation
+python src/examples/demo_force_torque.py --simulation
 ```
 
-For detailed instructions on simulation and hardware setup, see the [Simulation README](SIMULATION_TESTING.md).
+For detailed instructions on simulation and hardware setup, see the [Simulation README](src/docs/PYXARM_TESTING.md).
 
 ### Web Interface & API Server
 ```bash
 # Start web interface and API server
-pyarm web
+pyxarm web
 
 # Or specify custom host/port
-pyarm web --host 0.0.0.0 --port 8000
+pyxarm web --host 0.0.0.0 --port 8000
 
 # Alternative method (without installing package)
-conda run -n sdl2-robots python -m src.cli.main web
+python -m src.cli.main web
 ```
 
 **Access Points:**
@@ -79,20 +75,20 @@ conda run -n sdl2-robots python -m src.cli.main web
 
 ## 💻 Command Line Interface
 
-PyXArm includes a convenient command-line interface:
+PyxArm includes a convenient command-line interface:
 
 ```bash
 # Show help
-pyarm --help
+pyxarm --help
 
 # Start web interface
-pyarm web
+pyxarm web
 
 # Start on custom host/port
-pyarm web --host 127.0.0.1 --port 8080
+pyxarm web --host 127.0.0.1 --port 8080
 
 # Show version
-pyarm --version
+pyxarm --version
 ```
 
 ## 🎯 Three-Stage Testing Strategy
@@ -105,9 +101,9 @@ pyarm --version
 
 For detailed guides on specific topics, please see the project root:
 
--   **[Features Overview](./FEATURES.md)**: A high-level overview of the controller's features.
--   **[API Reference](./API_REFERENCE.md)**: Detailed documentation of the `XArmController` methods and parameters.
--   **[Simulation & Testing Guide](./SIMULATION_TESTING.md)**: A comprehensive guide to simulation modes and the project's testing strategy.
+-   **[Features Overview](./src/docs/PYXARM_FEATURES.md)**: A high-level overview of the controller's features.
+-   **[API Reference](./src/docs/PYXARM_API.md)**: Detailed documentation of the `XArmController` methods and parameters.
+-   **[Simulation & Testing Guide](./src/docs/PYXARM_TESTING.md)**: A comprehensive guide to simulation modes and the project's testing strategy.
 
 ## 🔧 Advanced Features
 
@@ -118,7 +114,7 @@ For detailed guides on specific topics, please see the project root:
 - **Remote deployment**: Docker containers on web servers
 - **Configuration**: All settings are now in `src/settings/`. Modify the `.yaml` files to match your hardware.
 - **Examples**: Run demo scripts in `src/examples/` to see different functionalities.
-- **API Server**: Start the web server with `pyarm web` or `uvicorn src.core.xarm_api_server:app --reload`.
+- **API Server**: Start the web server with `pyxarm web` or `uvicorn src.core.xarm_api_server:app --reload`.
 
 ## 🤝 Contributing
 
@@ -137,7 +133,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Issues**: Create GitHub issues for bugs and feature requests
 - **Documentation**: Check root directory for comprehensive guides
 - **Examples**: Run demo scripts in `src/examples/`
-- **CLI**: Use `pyarm --help` for command-line interface
+- **CLI**: Use `pyxarm --help` for command-line interface
 - **API**: Access interactive docs at `http://localhost:6001/docs`
 
 ---

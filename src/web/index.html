@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>xArm Controller Dashboard</title>
-    <link rel="stylesheet" href="/web/style.css">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
@@ -51,65 +51,91 @@
                         <div>Track:</div><div id="track-state">N/A</div>
                         <div>Mode:</div><div id="robot-mode">N/A</div>
                         <div>Position:</div><div id="current-position">[...]</div>
-                        <div>Joints:</div><div id="current-joints">[...]</div>
-                        <div>Track Pos:</div><div id="track-position">N/A</div>
                         <div>Last Error:</div><div id="last-error">None</div>
                     </div>
-                </div>
-
-                <div class="card">
-                    <h2>System Control</h2>
-                    <button id="home-btn" class="btn">Go Home</button>
-                    <button id="stop-btn" class="btn btn-danger">STOP</button>
                 </div>
             </div>
 
             <div class="column-right">
                 <div class="card">
-                    <h2>Arm Movement</h2>
-                    <div class="tabs">
-                        <button class="tab-link active" onclick="openTab(event, 'position-tab')">Position</button>
-                        <button class="tab-link" onclick="openTab(event, 'joints-tab')">Joints</button>
-                        <button class="tab-link" onclick="openTab(event, 'locations-tab')">Locations</button>
-                    </div>
-
-                    <div id="position-tab" class="tab-content active">
-                        <input type="number" id="pos-x" placeholder="X (mm)">
-                        <input type="number" id="pos-y" placeholder="Y (mm)">
-                        <input type="number" id="pos-z" placeholder="Z (mm)">
-                        <input type="number" id="pos-roll" placeholder="Roll (°)">
-                        <input type="number" id="pos-pitch" placeholder="Pitch (°)">
-                        <input type="number" id="pos-yaw" placeholder="Yaw (°)">
-                        <button id="move-pos-btn" class="btn">Move to Position</button>
-                    </div>
-
-                    <div id="joints-tab" class="tab-content">
-                        <input type="text" id="joint-angles" placeholder="e.g., 0, -15, 0, 30, 0, 0">
-                        <button id="move-joints-btn" class="btn">Move Joints</button>
-                    </div>
-
-                    <div id="locations-tab" class="tab-content">
-                        <select id="location-select"></select>
-                        <button id="move-loc-btn" class="btn">Move to Location</button>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <h2>Components</h2>
-                    <div class="component-control">
-                        <h3>Gripper</h3>
-                        <button id="open-gripper-btn" class="btn">Open</button>
-                        <button id="close-gripper-btn" class="btn">Close</button>
-                    </div>
-                    <div class="component-control">
-                        <h3>Linear Track</h3>
-                        <select id="track-location-select"></select>
-                        <button id="move-track-loc-btn" class="btn">Move to Location</button>
+                    <h2>System Control</h2>
+                    <div class="control-layout-vertical">
+                        <div class="xarm-section">
+                            <div class="component-control">
+                                <h3>xArm</h3>
+                                <div class="xarm-buttons">
+                                    <button id="home-btn" class="btn">Home</button>
+                                    <button id="stop-btn" class="btn btn-danger">STOP</button>
+                                    <button id="clear-errors-btn" class="btn btn-warning">Clear</button>
+                                </div>
+                                <div class="position-controls-row">
+                                    <select id="predefined-position-select" class="position-dropdown"></select>
+                                    <input type="text" id="realtime-joints" placeholder="Current Joint Angles" readonly class="joints-display">
+                                </div>
+                                <div class="move-controls-row">
+                                    <div class="speed-input-group">
+                                        <label for="move-speed">Speed</label>
+                                        <input type="number" id="move-speed" placeholder="20" min="1" max="100" value="20" class="speed-input">
+                                        <span class="speed-unit">°/s</span>
+                                    </div>
+                                    <div class="move-buttons-group">
+                                        <button id="move-predefined-btn" class="btn move-position-button">Move to Position</button>
+                                        <button id="enable-robot-btn" class="btn btn-success enable-button">Enable</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="components-section">
+                            <div class="component-control">
+                                <h3>Gripper</h3>
+                                <div class="gripper-controls">
+                                    <button id="open-gripper-btn" class="btn">Open</button>
+                                    <button id="close-gripper-btn" class="btn">Close</button>
+                                    <button id="enable-gripper-btn" class="btn btn-success">Enable</button>
+                                </div>
+                                <div class="stroke-control">
+                                    <div class="stroke-control-row">
+                                        <label for="gripper-stroke">Stroke:</label>
+                                        <input type="number" id="gripper-stroke" placeholder="" disabled>
+                                    </div>
+                                    <button id="move-to-stroke-btn" class="btn move-button" disabled>Move</button>
+                                </div>
+                                <div id="gripper-info" class="component-info">
+                                    <div class="info-left">
+                                        Gripper: <span id="gripper-type-display">N/A</span>
+                                    </div>
+                                    <div class="info-right">
+                                        State: <span id="gripper-state-display">N/A</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="component-control">
+                                <h3>Linear Track</h3>
+                                <div class="track-controls">
+                                    <div class="track-speed-group">
+                                        <label for="track-speed">Speed (mm/s):</label>
+                                        <input type="number" id="track-speed" placeholder="1-1000" min="1" max="1000" value="200">
+                                    </div>
+                                </div>
+                                <div class="track-location-control">
+                                    <select id="track-location-select"></select>
+                                    <button id="move-track-loc-btn" class="btn move-button">Move</button>
+                                </div>
+                                <div id="track-info" class="component-info">
+                                    <div class="info-left">
+                                        Range: <span id="track-range-display">0-700 mm</span>
+                                    </div>
+                                    <div class="info-right">
+                                        Current: <span id="track-position-display">N/A</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </main>
     </div>
-    <script src="/web/main.js"></script>
+    <script src="main.js?v=20241222"></script>
 </body>
 </html> 

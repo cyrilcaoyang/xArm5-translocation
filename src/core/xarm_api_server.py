@@ -17,14 +17,16 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
-from .xarm_controller import XArmController, SafetyLevel
-from .xarm_utils import load_config
-from .xarm_controller import ComponentState
+try:
+    from .xarm_controller import XArmController, SafetyLevel, ComponentState
+    from .xarm_utils import load_config
+except ImportError:
+    from core.xarm_controller import XArmController, SafetyLevel, ComponentState
+    from core.xarm_utils import load_config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -185,9 +187,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Mount static files directory
-app.mount("/web", StaticFiles(directory="src/web"), name="web")
-
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -227,7 +226,9 @@ async def broadcast_status_update():
                     "host": controller.host,
                     "port": controller.xarm_config.get('port', 18333),
                     "profile_name": getattr(controller, 'profile_name', 'unknown'),
-                    "simulation_mode": controller.simulation_mode
+                    "simulation_mode": controller.simulation_mode,
+                    "gripper_type": controller.gripper_type if hasattr(controller, 'gripper_type') else 'N/A',
+                    "gripper_config": getattr(controller, 'current_gripper_config', {})
                 }
             
             system_status = controller.get_system_status()
@@ -253,11 +254,6 @@ async def broadcast_status_update():
 
 # API Routes
 
-@app.get("/")
-async def read_root():
-    """Serve the main dashboard page."""
-    return FileResponse('src/web/index.html')
-
 @app.get("/api")
 async def root():
     """Root endpoint with API information"""
@@ -271,16 +267,25 @@ async def root():
 @app.get("/api/configurations")
 async def get_configurations():
     """Scan and return available connection profiles from the main config file."""
-    config_path = os.path.join('src', 'settings', 'xarm_config.yaml')
-    try:
-        full_config = load_config(config_path)
-        profiles = full_config.get('profiles', {})
-        return sorted(list(profiles.keys()))
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Main xarm_config.yaml not found.")
-    except Exception as e:
-        logger.error(f"Failed to read profiles from xarm_config.yaml: {e}")
-        raise HTTPException(status_code=500, detail="Failed to read profiles.")
+    # Try multiple possible paths for main config
+    possible_paths = [
+        os.path.join('src', 'settings', 'xarm_config.yaml'),
+        os.path.join('settings', 'xarm_config.yaml'),
+        os.path.join(os.path.dirname(__file__), '..', 'settings', 'xarm_config.yaml')
+    ]
+    
+    for config_path in possible_paths:
+        try:
+            full_config = load_config(config_path)
+            profiles = full_config.get('profiles', {})
+            return sorted(list(profiles.keys()))
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            logger.error(f"Failed to read profiles from {config_path}: {e}")
+            continue
+    
+    raise HTTPException(status_code=404, detail="Main xarm_config.yaml not found in any expected location.")
 
 
 @app.post("/connect")
@@ -295,7 +300,7 @@ async def connect_robot(request: ConnectionRequest, background_tasks: Background
     
     if controller and controller.is_alive:
         raise HTTPException(status_code=400, detail="A robot is already connected. Please disconnect first.")
-
+    
     try:
         # Create and initialize the controller instance
         controller = XArmController(
@@ -319,6 +324,7 @@ async def connect_robot(request: ConnectionRequest, background_tasks: Background
                 "model": controller.model_name,
                 "num_joints": controller.num_joints,
                 "gripper_type": controller.gripper_type if hasattr(controller, 'gripper_type') else 'N/A',
+                "gripper_config": getattr(controller, 'current_gripper_config', {}),
                 "has_track": controller.has_track(),
                 "component_states": controller.get_component_states(),
                 "safety_level": controller.safety_level.name
@@ -408,18 +414,21 @@ async def get_status():
             "host": controller.host,
             "port": controller.xarm_config.get('port', 18333),
             "profile_name": getattr(controller, 'profile_name', 'unknown'),
-            "simulation_mode": controller.simulation_mode
+            "simulation_mode": controller.simulation_mode,
+            "gripper_type": controller.gripper_type if hasattr(controller, 'gripper_type') else 'N/A',
+            "gripper_config": getattr(controller, 'current_gripper_config', {})
         }
     
     return {
-        "connection_state": controller.states.get('connection').value if controller.states.get('connection') else "unknown",
+        "connection_state": controller.states.get('connection').value if hasattr(controller.states.get('connection'), 'value') else str(controller.states.get('connection', 'unknown')),
         "connection_details": connection_details,
-        "arm_state": controller.states.get('arm').value if controller.states.get('arm') else "unknown",
-        "gripper_state": controller.states.get('gripper').value if controller.states.get('gripper') else "unknown",
-        "track_state": controller.states.get('track').value if controller.states.get('track') else "unknown",
+        "arm_state": controller.states.get('arm').value if hasattr(controller.states.get('arm'), 'value') else str(controller.states.get('arm', 'unknown')),
+        "gripper_state": controller.states.get('gripper').value if hasattr(controller.states.get('gripper'), 'value') else str(controller.states.get('gripper', 'unknown')),
+        "track_state": controller.states.get('track').value if hasattr(controller.states.get('track'), 'value') else str(controller.states.get('track', 'unknown')),
         "is_alive": controller.is_alive,
         "current_position": controller.get_current_position(),
         "current_joints": controller.get_current_joints(),
+        "track_position": controller.get_track_position() if controller.has_track() else None,
         "last_error": getattr(controller, 'last_error', None),
     }
 
@@ -436,25 +445,42 @@ async def get_performance_status():
 
 @app.get("/locations")
 async def get_locations():
-    """Get all named arm locations from the location config file."""
+    """Get all named arm positions from the position config file."""
     try:
-        location_config_path = os.path.join('src', 'settings', 'location_config.yaml')
-        location_config = load_config(location_config_path)
-        locations = list(location_config.get('locations', {}).keys())
-        return {"locations": locations}
-    except FileNotFoundError:
-        logger.warning("location_config.yaml not found, returning empty list for locations.")
-        return {"locations": []}
+        # Try multiple possible paths for position config
+        possible_paths = [
+            os.path.join('src', 'settings', 'position_config.yaml'),
+            os.path.join('settings', 'position_config.yaml'),
+            os.path.join(os.path.dirname(__file__), '..', 'settings', 'position_config.yaml')
+        ]
+        
+        position_config = None
+        for path in possible_paths:
+            try:
+                position_config = load_config(path)
+                break
+            except FileNotFoundError:
+                continue
+        
+        if position_config:
+            locations = list(position_config.get('positions', {}).keys())
+            positions = position_config.get('positions', {})
+        else:
+            logger.warning("position_config.yaml not found in any expected location, returning empty list.")
+            locations = []
+            positions = {}
+        
+        return {"locations": locations, "positions": positions}
     except Exception as e:
-        logger.error(f"Get arm locations failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Get arm locations failed: {str(e)}")
+        logger.error(f"Get arm positions failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Get arm positions failed: {str(e)}")
 
 # Movement endpoints
 @app.post("/move/position")
 async def move_to_position(request: PositionRequest, background_tasks: BackgroundTasks):
     """Move the robot to a specific Cartesian position."""
     c = get_controller()
-
+    
     async def move_task():
         success = c.move_to_position(
             x=request.x, y=request.y, z=request.z,
@@ -494,7 +520,7 @@ async def move_joints(request: JointRequest, background_tasks: BackgroundTasks):
 async def move_relative(request: RelativeRequest, background_tasks: BackgroundTasks):
     """Move the robot relative to its current position."""
     c = get_controller()
-
+    
     async def move_task():
         success = c.move_relative(
             dx=request.dx, dy=request.dy, dz=request.dz,
@@ -514,7 +540,7 @@ async def move_relative(request: RelativeRequest, background_tasks: BackgroundTa
 async def move_to_location(request: LocationRequest, background_tasks: BackgroundTasks):
     """Move the robot to a pre-defined named location."""
     c = get_controller()
-
+    
     async def move_task():
         success = c.move_to_named_location(
             location_name=request.location_name,
@@ -554,7 +580,7 @@ async def move_home(background_tasks: BackgroundTasks):
 async def stop_movement(background_tasks: BackgroundTasks):
     """Stop all robot motion immediately."""
     c = get_controller()
-
+    
     async def stop_task():
         c.stop_motion()
         logger.info("Stop command issued.")
@@ -583,6 +609,36 @@ async def clear_errors(background_tasks: BackgroundTasks):
     except Exception as e:
         logger.error(f"Clear errors failed: {e}")
         raise HTTPException(status_code=500, detail=f"Clear errors failed: {str(e)}")
+
+@app.post("/robot/enable")
+async def enable_robot():
+    """Re-enable robot motion after emergency stop."""
+    c = get_controller()
+    
+    if c.simulation_mode:
+        logger.info("Simulation mode: Robot motion re-enabled")
+        c.alive = True
+        c.states['arm'] = ComponentState.ENABLED
+    else:
+        # Clear any errors first
+        if hasattr(c.arm, 'clean_error'):
+            c.arm.clean_error()
+        if hasattr(c.arm, 'clean_warn'):
+            c.arm.clean_warn()
+        
+        # Re-enable motion
+        if hasattr(c.arm, 'motion_enable'):
+            result = c.arm.motion_enable(enable=True)
+            if result != 0 and result is not None:
+                logger.warning(f"Motion enable returned code: {result}")
+        
+        # Reset alive state
+        c.alive = True
+        c.states['arm'] = ComponentState.ENABLED
+        logger.info("Robot motion re-enabled after emergency stop")
+    
+    await broadcast_status_update()
+    return {"message": "Robot motion enabled successfully."}
 
 @app.post("/component/enable")
 async def enable_component(request: ComponentRequest):
@@ -666,6 +722,24 @@ async def close_gripper(request: GripperRequest, background_tasks: BackgroundTas
     background_tasks.add_task(gripper_task)
     return {"message": "Close gripper command accepted."}
 
+@app.post("/gripper/move/stroke")
+async def move_gripper_stroke(request: dict, background_tasks: BackgroundTasks):
+    """Move gripper to specific stroke position (for non-bio grippers)."""
+    c = get_controller()
+    
+    stroke = request.get('stroke')
+    if stroke is None:
+        raise HTTPException(status_code=400, detail="Stroke value is required")
+
+    async def gripper_task():
+        success = c.move_gripper_to_stroke(stroke=stroke)
+        if not success:
+            logger.error(f"Failed to move gripper to stroke {stroke}.")
+        await broadcast_status_update()
+    
+    background_tasks.add_task(gripper_task)
+    return {"message": f"Move gripper to stroke {stroke} command accepted."}
+
 # Linear track endpoints
 @app.post("/track/move")
 async def move_track(request: TrackRequest, background_tasks: BackgroundTasks):
@@ -684,20 +758,27 @@ async def move_track(request: TrackRequest, background_tasks: BackgroundTasks):
 @app.post("/track/move/location")
 async def move_track_to_location(request: TrackLocationRequest, background_tasks: BackgroundTasks):
     """Move the linear track to a pre-configured named location."""
-    c = get_controller()
+    try:
+        c = get_controller()
 
-    async def track_task():
-        success = c.move_track_to_named_location(
-            location_name=request.location_name,
+        async def track_task():
+            try:
+                success = c.move_track_to_named_location(
+                    location_name=request.location_name,
             speed=request.speed,
             wait=request.wait
         )
-        if not success:
-            logger.error(f"Failed to move track to named location: {request.location_name}")
-        await broadcast_status_update()
+                if not success:
+                    logger.error(f"Failed to move track to named location: {request.location_name}")
+                await broadcast_status_update()
+            except Exception as e:
+                logger.error(f"Exception in track move task: {e}", exc_info=True)
 
-    background_tasks.add_task(track_task)
-    return {"message": f"Move track to location '{request.location_name}' command accepted."}
+        background_tasks.add_task(track_task)
+        return {"message": f"Move track to location '{request.location_name}' command accepted."}
+    except Exception as e:
+        logger.error(f"Track move location failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Track move location failed: {str(e)}")
 
 @app.get("/track/position")
 async def get_track_position():
@@ -712,13 +793,28 @@ async def get_track_position():
 async def get_track_locations():
     """Get a list of all available named locations for the linear track from its config file."""
     try:
-        track_config_path = os.path.join('src', 'settings', 'linear_track_config.yaml')
-        track_config = load_config(track_config_path)
-        locations = list(track_config.get('locations', {}).keys())
-        return {"locations": locations}
-    except FileNotFoundError:
-        logger.warning("linear_track_config.yaml not found, returning empty list for track locations.")
-        return {"locations": []}
+        # Try multiple possible paths for track config
+        possible_paths = [
+            os.path.join('src', 'settings', 'linear_track_config.yaml'),
+            os.path.join('settings', 'linear_track_config.yaml'),
+            os.path.join(os.path.dirname(__file__), '..', 'settings', 'linear_track_config.yaml')
+        ]
+        
+        track_config = None
+        for path in possible_paths:
+            try:
+                track_config = load_config(path)
+                break
+            except FileNotFoundError:
+                continue
+        
+        if track_config:
+            locations = list(track_config.get('locations', {}).keys())
+            positions = track_config.get('locations', {})
+            return {"locations": locations, "positions": positions}
+        else:
+            logger.warning("linear_track_config.yaml not found in any expected location, returning empty list.")
+            return {"locations": [], "positions": {}}
     except Exception as e:
         logger.error(f"Get track locations failed: {e}")
         raise HTTPException(status_code=500, detail=f"Get track locations failed: {str(e)}")
@@ -871,7 +967,7 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     # Get host and port from environment variables or use defaults
     host = os.environ.get("XARM_API_HOST", "0.0.0.0")
-    port = int(os.environ.get("XARM_API_PORT", 6001))
+    port = int(os.environ.get("XARM_API_PORT", 8000))
     
     logger.info(f"Starting server on {host}:{port}")
     

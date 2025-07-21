@@ -1,6 +1,6 @@
 # Key Features
 
-The `PyXArm` package provides a robust, feature-rich interface for controlling UFACTORY xArm robots, with a strong emphasis on safety, reliability, and ease of use. It supports multiple robot models, grippers, linear track, and force torque sensor, all managed through a single, unified API.
+The `PyxArm` package provides a robust, feature-rich interface for controlling UFACTORY xArm robots, with a strong emphasis on safety, reliability, and ease of use. It supports multiple robot models, grippers, linear track, and force torque sensor, all managed through a single, unified API.
 
 The system is designed to operate in three distinct stages, from pure software simulation to real hardware, ensuring code can be developed and tested safely and efficiently.
 
@@ -47,7 +47,7 @@ Safety is a primary design principle, with multiple layers of validation and int
 
 ## Force Torque Sensor
 
-PyXArm includes comprehensive support for the 6-axis force torque sensor with three main functionalities:
+PyxArm includes comprehensive support for the 6-axis force torque sensor with three main functionalities:
 
 | Force Torque Feature          | Description                                                                                                                                                            |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -70,12 +70,12 @@ PyXArm includes comprehensive support for the 6-axis force torque sensor with th
 
 ## Command Line Interface
 
-PyXArm includes a professional command-line interface for easy operation:
+PyxArm includes a professional command-line interface for easy operation:
 
 | CLI Feature               | Description                                                                                                                                 |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Web Interface Launcher** | Simple `pyarm web` command to start the web interface and API server with customizable host and port options.                           |
-| **Version Management**     | Built-in version checking with `pyarm --version` for package information and compatibility verification.                                   |
+| **Web Interface Launcher** | Simple `pyxarm web` command to start the web interface and API server with customizable host and port options.                           |
+| **Version Management**     | Built-in version checking with `pyxarm --version` for package information and compatibility verification.                                   |
 | **Development Mode**       | Alternative execution method `python -m src.cli.main web` for development without package installation.                                    |
 | **Flexible Configuration** | Command-line options for host binding (`--host`) and port selection (`--port`) to accommodate different network setups.                  |
 

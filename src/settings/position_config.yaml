@@ -1,4 +1,4 @@
-locations:
+positions:
   ROBOT_HOME: [0.0, 0.0, 0.0, 0.0, 0.0]
   ROBOT_HOME_-90: [-90.0, 0.0, 0.0, 0.0, 0.0]
   Rlw_low: [1.7, 51.0, -54.1, 3.1, 181.4] # reach down low
