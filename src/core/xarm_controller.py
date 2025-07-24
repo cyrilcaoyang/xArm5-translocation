@@ -65,7 +65,7 @@ class XArmController:
         self.xarm_config = {}
         self.gripper_config = {}
         self.track_config = {}
-        self.location_config = {}
+        self.position_config = {}
         self.safety_config = {}
         self.force_torque_config = {}
 
@@ -154,9 +154,9 @@ class XArmController:
 
         # Load other component configurations as before
         component_configs = {
-            'gripper_config': self.gripper_type + '_gripper_config.yaml' if self.gripper_type != 'none' else None,
+            'gripper_config': 'gripper_config.yaml' if self.gripper_type != 'none' else None,
             'track_config': 'linear_track_config.yaml' if self.enable_track else None,
-            'location_config': 'location_config.yaml',
+            'position_config': 'position_config.yaml',
             'safety_config': 'safety.yaml',
             'force_torque_config': 'force_torque_config.yaml'
         }
@@ -635,9 +635,21 @@ class XArmController:
             print(f"Current analysis error: {e}")
 
     def _trigger_maintenance_alert(self, alert_type, data):
-        """Trigger maintenance alert."""
+        """Trigger maintenance alert with rate limiting to prevent spam."""
+        current_time = time.time()
+        
+        # Rate limiting: only show same alert type once every 60 seconds
+        if not hasattr(self, '_last_alert_times'):
+            self._last_alert_times = {}
+        
+        last_alert_time = self._last_alert_times.get(alert_type, 0)
+        if current_time - last_alert_time < 60.0:  # 60 second cooldown
+            return  # Skip this alert to prevent spam
+        
+        self._last_alert_times[alert_type] = current_time
+        
         alert = {
-            'timestamp': time.time(),
+            'timestamp': current_time,
             'type': alert_type,
             'data': data,
             'severity': 'warning' if 'warning' in alert_type else 'critical'
@@ -1338,19 +1350,19 @@ class XArmController:
 
     def move_to_named_location(self, location_name, speed=None):
         """
-        Move to a predefined location from the location config.
+        Move to a predefined location from the position config.
         Supports both joint-based and Cartesian-based location definitions.
         """
-        # Check if locations are defined in config
-        if 'locations' not in self.location_config:
-            print(f"Error: No 'locations' section found in location config")
+        # Check if positions are defined in config
+        if 'positions' not in self.position_config:
+            print(f"Error: No 'positions' section found in position config")
             return False
 
-        if location_name not in self.location_config['locations']:
+        if location_name not in self.position_config['positions']:
             print(f"Error: Location '{location_name}' not found in config")
             return False
 
-        location = self.location_config['locations'][location_name]
+        location = self.position_config['positions'][location_name]
 
         # Detect format: list = joint angles, dict = Cartesian coordinates
         if isinstance(location, list):
@@ -1669,10 +1681,24 @@ class XArmController:
             return False
 
         location_data = self.track_config['locations'][location_name]
-        position = location_data.get('position')
+        
+        # Handle both formats: simple integer position or dict with position/speed
+        if isinstance(location_data, (int, float)):
+            # Simple format: location_name: position_value
+            position = location_data
+            config_speed = None
+        elif isinstance(location_data, dict):
+            # Complex format: location_name: {position: value, speed: value}
+            position = location_data.get('position')
+            config_speed = location_data.get('speed')
+        else:
+            print(f"Error: Invalid location format for '{location_name}'. Expected number or dict.")
+            self.last_error = f"Invalid location format for '{location_name}'."
+            return False
 
-        # Use provided speed, then config speed, then default controller speed
-        speed = speed or location_data.get('speed') or self.track_speed
+        # Use provided speed, then config speed, then default track speed
+        if speed is None:
+            speed = config_speed or self.track_config.get('Speed', 200)
 
         if position is None:
             print(f"Error: No position defined for track location '{location_name}'.")
@@ -1776,8 +1802,8 @@ class XArmController:
 
     def get_named_locations(self):
         """Returns a list of all named locations."""
-        if self.location_config and 'locations' in self.location_config:
-            return list(self.location_config['locations'].keys())
+        if self.position_config and 'positions' in self.position_config:
+            return list(self.position_config['positions'].keys())
         return []
 
     def get_system_info(self):
@@ -2444,6 +2470,174 @@ class XArmController:
     def has_force_torque_sensor(self):
         """Check if force torque sensor is available and enabled."""
         return self.force_torque_config.get('enable', True)
+
+    def move_plate_linear(self, target_location, num_steps=1, speed=None, wait_between_steps=0.1):
+        """
+        Move tool linearly from current position to target position.
+        Tool maintains the same absolute orientation throughout the movement.
+        
+        Args:
+            target_location (str): Name of target location from position_config.yaml
+            num_steps (int): Number of interpolation steps (default: 10)
+            speed (float): Movement speed (default: tcp_speed)
+            wait_between_steps (float): Delay between steps in seconds (default: 0.1)
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self.is_component_enabled('arm'):
+            print("Arm is not enabled")
+            return False
+            
+        # Validate target location exists
+        if 'positions' not in self.position_config:
+            print("Error: No positions defined in config")
+            return False
+            
+        positions = self.position_config['positions']
+        if target_location not in positions:
+            print(f"Error: Target location '{target_location}' not found")
+            return False
+            
+        # Get current position as starting point
+        start_cartesian = self.get_current_position()
+        if not start_cartesian:
+            print("Error: Could not get current position")
+            return False
+            
+        # Convert target position to Cartesian
+        target_pos = positions[target_location]
+        target_cartesian = self._position_to_cartesian(target_location, target_pos, speed)
+        if not target_cartesian:
+            return False
+            
+        print(f"Moving linearly from current position to '{target_location}'")
+        print(f"Start: {start_cartesian[:3]} (X,Y,Z)")
+        print(f"Target: {target_cartesian[:3]} (X,Y,Z)")
+        print(f"Tool orientation: {start_cartesian[3:]} (maintained throughout)")
+        
+        # Perform linear interpolation - POSITION ONLY
+        # Tool orientation stays exactly the same as current orientation
+        if num_steps == 1:
+            # Single step - move directly to target
+            steps_to_execute = [1]
+        else:
+            # Multiple steps - interpolate
+            steps_to_execute = range(1, num_steps + 1)
+            
+        for i in steps_to_execute:
+            # Calculate interpolation factor (0 to 1)
+            t = i / max(num_steps, 1)  # Avoid division by zero
+            
+            # Linear interpolation for POSITION only (X, Y, Z)
+            interp_x = start_cartesian[0] + t * (target_cartesian[0] - start_cartesian[0])
+            interp_y = start_cartesian[1] + t * (target_cartesian[1] - start_cartesian[1])
+            interp_z = start_cartesian[2] + t * (target_cartesian[2] - start_cartesian[2])
+            
+            # Keep CURRENT tool orientation throughout (absolute direction in space)
+            interp_roll = start_cartesian[3]
+            interp_pitch = start_cartesian[4] 
+            interp_yaw = start_cartesian[5]
+            
+            interp_pos = [interp_x, interp_y, interp_z, interp_roll, interp_pitch, interp_yaw]
+            
+            # Move to interpolated position
+            success = self.move_to_position(
+                x=interp_pos[0], y=interp_pos[1], z=interp_pos[2],
+                roll=interp_pos[3], pitch=interp_pos[4], yaw=interp_pos[5],
+                speed=speed, check_collision=False, wait=True
+            )
+            
+            if not success:
+                print(f"Error: Failed at step {i}/{num_steps}")
+                return False
+                
+            print(f"✓ Step {i}/{num_steps}: {interp_pos[:3]}")
+                
+            # Wait between steps if specified
+            if wait_between_steps > 0 and i < num_steps:
+                time.sleep(wait_between_steps)
+                
+        print(f"✓ Successfully completed linear movement to '{target_location}'")
+        return True
+
+    def _position_to_cartesian(self, location_name, position_data, speed=None):
+        """
+        Convert any position format to Cartesian coordinates [x, y, z, roll, pitch, yaw].
+        
+        Supported formats:
+        1. Joint angles: [J1, J2, J3, J4, J5] or [J1, J2, J3, J4, J5, J6, J7]
+        2. Cartesian list: [x, y, z, roll, pitch, yaw]  
+        3. Cartesian dict: {x: 300, y: 0, z: 400, roll: 180, pitch: 0, yaw: 0}
+        
+        Args:
+            location_name (str): Name of the location (for logging)
+            position_data: Position in any supported format
+            speed (float): Speed for temporary movements (if needed)
+            
+        Returns:
+            list: [x, y, z, roll, pitch, yaw] or None if conversion failed
+        """
+        if isinstance(position_data, dict):
+            # Dictionary format: {x: 300, y: 0, z: 400, roll: 180, pitch: 0, yaw: 0}
+            print(f"Using Cartesian dict format for '{location_name}'")
+            return [
+                position_data['x'], position_data['y'], position_data['z'],
+                position_data.get('roll', 180), position_data.get('pitch', 0), position_data.get('yaw', 0)
+            ]
+            
+        elif isinstance(position_data, list):
+            if len(position_data) == 6:
+                # Already Cartesian: [x, y, z, roll, pitch, yaw]
+                print(f"Using Cartesian list format for '{location_name}': {position_data}")
+                return position_data
+                
+            elif len(position_data) <= self.num_joints:
+                # Joint angles: [J1, J2, J3, J4, J5] or [J1, ..., J7]
+                print(f"Converting joint angles to Cartesian for '{location_name}': {position_data}")
+                try:
+                    if not self.simulation_mode and hasattr(self.arm, 'get_forward_kinematics'):
+                        # Use forward kinematics (preferred - no robot movement)
+                        ret = self.arm.get_forward_kinematics(position_data)
+                        if ret[0] == 0:
+                            cartesian = ret[1][:6]  # [x, y, z, roll, pitch, yaw]
+                            print(f"✓ Forward kinematics result: {cartesian}")
+                            return cartesian
+                        else:
+                            print("Forward kinematics failed, using position sampling")
+                    
+                    # Fallback: Move robot to get position (less efficient)
+                    print("Using position sampling method")
+                    temp_current = self.get_current_position()
+                    if not self.move_joints(position_data, speed=speed):
+                        print(f"Error: Could not move to joint position {position_data}")
+                        return None
+                    
+                    cartesian = self.get_current_position()
+                    if not cartesian:
+                        print("Error: Could not get Cartesian position after joint movement")
+                        return None
+                    
+                    # Restore to original position
+                    if temp_current and not self.move_to_position(
+                        x=temp_current[0], y=temp_current[1], z=temp_current[2],
+                        roll=temp_current[3], pitch=temp_current[4], yaw=temp_current[5],
+                        speed=speed, wait=True
+                    ):
+                        print("Warning: Could not restore to original position")
+                    
+                    print(f"✓ Position sampling result: {cartesian}")
+                    return cartesian
+                    
+                except Exception as e:
+                    print(f"Error in joint-to-Cartesian conversion: {e}")
+                    return None
+            else:
+                print(f"Error: Invalid list length {len(position_data)} for '{location_name}'")
+                return None
+        else:
+            print(f"Error: Unsupported position format for '{location_name}': {type(position_data)}")
+            return None
 
 # Example usage:
 if __name__ == '__main__':

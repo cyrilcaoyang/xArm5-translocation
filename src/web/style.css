@@ -20,9 +20,70 @@ header {
     padding: 16px 24px;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.header-content {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
+    margin-bottom: 15px;
+}
+
+.title-status-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* --- Log Container Styles --- */
+.log-container {
+    width: 600px;
+    height: 144px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    background-color: #f8f9fa;
+    overflow: hidden;
+    margin-left: 20px;
+}
+
+.log-stream {
+    height: 100%;
+    padding: 8px;
+    overflow-x: auto;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8em;
+    line-height: 1.4;
+    color: #495057;
+    background-color: white;
+    white-space: nowrap;
+}
+
+.log-entry {
+    margin-bottom: 2px;
+    padding: 2px 4px;
+    border-radius: 2px;
+    white-space: nowrap;
+    display: block;
+}
+
+.log-time {
+    color: #6c757d;
+    font-weight: 600;
+}
+
+.log-info {
+    color: #495057;
+}
+
+.log-warning {
+    color: #856404;
+    background-color: #fff3cd;
+}
+
+.log-error {
+    color: #721c24;
+    background-color: #f8d7da;
 }
 
 .dashboard-layout {
@@ -51,8 +112,8 @@ header {
 .card h2 {
     margin-top: 0;
     margin-bottom: 20px;
-    font-size: 1.1em;
-    font-weight: 600;
+    font-size: 1.4em;
+    font-weight: 700;
     color: #495057;
     border-bottom: 1px solid #e9ecef;
     padding-bottom: 12px;
@@ -85,9 +146,14 @@ header {
 .xarm-buttons .btn {
     flex: 1;
     min-width: 0;
-    height: 60px;
+    height: 120px;
     font-size: 2.2em;
     font-weight: bold;
+}
+
+/* Make STOP button font larger for emphasis */
+#stop-btn {
+    font-size: 3.0em !important;
 }
 
 .move-button {
@@ -300,11 +366,11 @@ select, input[type="text"], input[type="number"] {
 
 .component-control h3 {
     margin: 0 0 12px 0;
-    height: 24px;
+    height: 28px;
     display: flex;
     align-items: center;
-    font-size: 0.9em;
-    font-weight: 600;
+    font-size: 1.2em;
+    font-weight: 700;
     color: #495057;
 }
 
@@ -356,18 +422,67 @@ select, input[type="text"], input[type="number"] {
     color: #495057;
 }
 
-.move-controls-row {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    justify-content: space-between;
-    margin: 12px 0;
-}
-
-.speed-input-group {
+/* --- Joint Movement Row ---
+.joint-move-row {
     display: flex;
     align-items: center;
     gap: 8px;
+    margin-top: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid #e9ecef;
+    flex-wrap: nowrap;
+}
+
+/* --- Linear Movement Row ---
+.linear-move-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid #e9ecef;
+    flex-wrap: nowrap;
+}
+
+/* --- Enable Button Row ---
+.enable-row {
+    margin-top: 12px;
+    text-align: center;
+}
+
+/* --- Inline Elements ---
+.inline-label {
+    font-size: 0.9em;
+    font-weight: 500;
+    color: #495057;
+    white-space: nowrap;
+    margin-left: 8px;
+}
+
+.inline-input {
+    width: 60px !important;
+    max-width: 60px !important;
+    min-width: 60px !important;
+    height: 32px;
+    padding: 6px 8px !important;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 0.9em;
+    text-align: center;
+    box-sizing: border-box;
+    background-color: white;
+}
+
+.inline-unit {
+    font-size: 0.85em;
+    color: #6c757d;
+    white-space: nowrap;
+}
+
+.speed-input-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     flex: 0 0 auto;
 }
 
@@ -376,16 +491,47 @@ select, input[type="text"], input[type="number"] {
     font-weight: 500;
     color: #495057;
     white-space: nowrap;
+    display: inline-block;
+    margin-right: 4px;
 }
 
-.speed-input {
-    width: 60px;
-    padding: 6px 8px;
+/* Override general input styles for specific speed inputs */
+.speed-input-group input[type="number"],
+.steps-input-group input[type="number"],
+input#joint-speed,
+input#linear-speed,
+input#linear-steps {
+    width: 60px !important;
+    max-width: 60px !important;
+    min-width: 60px !important;
+    height: 32px;
+    padding: 6px 8px !important;
     border: 1px solid #ced4da;
     border-radius: 4px;
     font-size: 0.9em;
     text-align: center;
+    box-sizing: border-box;
+    background-color: white;
 }
+
+/* --- Steps Input Group ---
+.steps-input-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.steps-input-group label {
+    font-size: 0.9em;
+    font-weight: 500;
+    color: #495057;
+    white-space: nowrap;
+    display: inline-block;
+    margin-right: 4px;
+}
+
+
 
 .speed-unit {
     font-size: 0.85em;
@@ -394,10 +540,12 @@ select, input[type="text"], input[type="number"] {
 }
 
 .move-position-button {
-    width: 150px !important;
-    min-width: 150px !important;
-    max-width: 150px !important;
-    flex: 0 0 150px;
+    width: 100px !important;
+    min-width: 100px !important;
+    max-width: 100px !important;
+    height: 32px;
+    padding: 6px 12px;
+    flex: 0 0 auto;
 }
 
 /* Ensure both Enable buttons are 65px wide */
@@ -487,4 +635,105 @@ select, input[type="text"], input[type="number"] {
 }
 .error-message-error {
     color: #dc3545;
-} 
+}
+
+/* --- Button Layout ---
+.move-buttons-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+}
+
+.move-linear-button {
+    width: 100px !important;
+    min-width: 100px !important;
+    max-width: 100px !important;
+    height: 32px;
+    padding: 6px 12px;
+    font-size: 0.85em;
+    flex: 0 0 auto;
+}
+
+/* Force exact same width for both buttons using IDs */
+button#move-predefined-btn,
+button#move-linear-btn {
+    width: 120px !important;
+    min-width: 120px !important;
+    max-width: 120px !important;
+    height: 32px !important;
+    padding: 6px 12px !important;
+    flex: 0 0 120px !important;
+    box-sizing: border-box !important;
+    text-align: center !important;
+    font-size: 0.85em !important;
+}
+
+/* --- Linear Movement Controls ---
+.linear-controls-row {
+    display: flex;
+    justify-content: center;
+    align-items: end;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e9ecef;
+}
+
+.linear-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 120px;
+}
+
+.linear-input-group label {
+    font-size: 0.85em;
+    font-weight: 500;
+    color: #495057;
+}
+
+.linear-dropdown, .steps-input {
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 0.9em;
+    background-color: #f8f9fa;
+}
+
+.steps-input {
+    width: 100%;
+    text-align: center;
+}
+
+.linear-buttons-group {
+    display: flex;
+    justify-content: center;
+}
+
+.btn.btn-primary {
+    background-color: #007bff;
+    border-color: #007bff;
+    color: white;
+    padding: 6px 12px;
+    font-size: 0.9em;
+}
+
+.btn.btn-primary:hover:not(:disabled) {
+    background-color: #0069d9;
+    border-color: #0062cc;
+}
+
+@media (max-width: 768px) {
+    .move-control-group {
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .speed-input-group, .steps-input-group {
+        justify-content: center;
+    }
+    
+    .linear-input-group {
+        margin-bottom: 8px;
+    }
+}

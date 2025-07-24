@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const configSelect = document.getElementById('config-select');
     const safetyLevelSelect = document.getElementById('safety-level-select');
     const simulationModeCheckbox = document.getElementById('simulation-mode');
+    const logStream = document.getElementById('log-stream');
 
     const homeBtn = document.getElementById('home-btn');
     const stopBtn = document.getElementById('stop-btn');
@@ -30,11 +31,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const trackSpeedInput = document.getElementById('track-speed');
     const predefinedPositionSelect = document.getElementById('predefined-position-select');
     const movePredefinedBtn = document.getElementById('move-predefined-btn');
-    const moveSpeedInput = document.getElementById('move-speed');
+    const jointSpeedInput = document.getElementById('joint-speed');
+    const linearSpeedInput = document.getElementById('linear-speed');
     const realtimeJointsDisplay = document.getElementById('realtime-joints');
     const enableRobotBtn = document.getElementById('enable-robot-btn');
     const moveToStrokeBtn = document.getElementById('move-to-stroke-btn');
     const gripperStrokeInput = document.getElementById('gripper-stroke');
+    
+    // Linear movement controls
+    const linearStepsInput = document.getElementById('linear-steps');
+    const moveLinearBtn = document.getElementById('move-linear-btn');
 
     let socket;
     let statusRefreshInterval = null;
@@ -179,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Check if all required DOM elements exist
             const requiredElements = [
                 'arm-state', 'gripper-state', 'track-state', 'robot-mode', 
-                'current-position', 'last-error'
+                'current-xyz', 'current-rpy', 'last-error'
             ];
             
             const missingElements = requiredElements.filter(id => {
@@ -318,7 +324,17 @@ document.addEventListener('DOMContentLoaded', () => {
             safeSetText('robot-mode', data.connection_details?.simulation_mode ? 'Simulation' : 'Hardware');
 
             const formatArray = (arr) => arr ? `[${arr.map(n => n.toFixed(2)).join(', ')}]` : '[...]';
-            safeSetText('current-position', formatArray(data.current_position));
+            
+            // Split position into X,Y,Z and Rx,Ry,Rz
+            if (data.current_position && data.current_position.length >= 6) {
+                const xyz = data.current_position.slice(0, 3);
+                const rpy = data.current_position.slice(3, 6);
+                safeSetText('current-xyz', formatArray(xyz));
+                safeSetText('current-rpy', formatArray(rpy));
+            } else {
+                safeSetText('current-xyz', '[...]');
+                safeSetText('current-rpy', '[...]');
+            }
             safeSetText('last-error', systemStatus.last_error || 'None');
             
             // Update real-time joints display
@@ -414,12 +430,17 @@ document.addEventListener('DOMContentLoaded', () => {
         // Enable/disable control buttons based on connection state
         const controlButtons = [
             homeBtn, stopBtn, clearErrorsBtn, openGripperBtn, closeGripperBtn, enableGripperBtn, moveTrackLocBtn, 
-            movePredefinedBtn, moveToStrokeBtn
+            movePredefinedBtn, moveToStrokeBtn, moveLinearBtn
         ];
         
         // Enable/disable input fields
         const controlInputs = [
-            moveSpeedInput, trackSpeedInput, gripperStrokeInput
+            jointSpeedInput, linearSpeedInput, trackSpeedInput, gripperStrokeInput, linearStepsInput
+        ];
+        
+        // Enable/disable select dropdowns  
+        const controlSelects = [
+            predefinedPositionSelect, trackLocationSelect
         ];
         
         controlButtons.forEach(btn => {
@@ -431,6 +452,12 @@ document.addEventListener('DOMContentLoaded', () => {
         controlInputs.forEach(input => {
             if (input) {
                 input.disabled = !enabled;
+            }
+        });
+        
+        controlSelects.forEach(select => {
+            if (select) {
+                select.disabled = !enabled;
             }
         });
         
@@ -476,6 +503,8 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.onopen = () => console.log('WebSocket connected.');
         socket.onmessage = (event) => {
             const message = JSON.parse(event.data);
+            console.log('WebSocket message received:', message); // Debug logging
+            
             if (message.type === 'status_update') {
                 // Only update UI if DOM is ready
                 if (document.readyState === 'complete') {
@@ -483,6 +512,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     setTimeout(() => updateStatusUI(message.data), 100);
                 }
+            } else if (message.type === 'log') {
+                // Handle incoming log messages from API server
+                console.log('Log message received:', message.log_message); // Debug logging
+                addLogEntry(message.log_message, message.log_type);
             }
         };
         socket.onclose = () => {
@@ -511,6 +544,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const displayText = positions ? `${loc} [${positions.join(', ')}]` : loc;
                 return `<option value="${loc}">${displayText}</option>`;
             }).join('');
+            
+            // Linear movement now uses the same dropdown as Move Joints
         }
         
         // Load track locations with position values
@@ -589,6 +624,13 @@ document.addEventListener('DOMContentLoaded', () => {
     enableRobotBtn.addEventListener('click', () => {
         apiRequest('/robot/enable', 'POST');
     });
+    
+    // Test log button  
+    const testLogBtn = document.getElementById('test-log-btn');
+    testLogBtn.addEventListener('click', () => {
+        console.log('Test log button clicked');
+        apiRequest('/test/log', 'POST');
+    });
 
     openGripperBtn.addEventListener('click', () => apiRequest('/gripper/open', 'POST', {}));
     closeGripperBtn.addEventListener('click', () => apiRequest('/gripper/close', 'POST', {}));
@@ -605,12 +647,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     movePredefinedBtn.addEventListener('click', () => {
         const location_name = predefinedPositionSelect.value;
-        const speed = moveSpeedInput ? parseInt(moveSpeedInput.value) || 20 : 20;
+        const speed = jointSpeedInput ? parseInt(jointSpeedInput.value) || 20 : 20;
         apiRequest('/move/location', 'POST', { 
             location_name, 
-            speed,
-            check_collision: true,
-            wait: true 
+            speed 
+        });
+    });
+
+    // Linear movement event listener
+    moveLinearBtn.addEventListener('click', () => {
+        const targetLocation = predefinedPositionSelect.value; // Use same dropdown as Move Joints
+        const numSteps = parseInt(linearStepsInput.value) || 1;
+        const speed = linearSpeedInput ? parseInt(linearSpeedInput.value) || 100 : 100;
+        
+        if (!targetLocation) {
+            showMessage('Please select a destination location.', 'error');
+            return;
+        }
+        
+        // Use new plate_linear endpoint - moves from current position to target
+        // Tool maintains the same absolute orientation throughout movement
+        apiRequest('/move/plate_linear', 'POST', {
+            target_location: targetLocation,
+            num_steps: numSteps,
+            speed: speed,
+            wait_between_steps: 0.1
         });
     });
 
@@ -633,15 +694,56 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // --- Initialization ---
-    fetchAndUpdateStatus();
+    // Set initial disconnected state explicitly
+    updateStatusText('Disconnected');
+    setControlsState(false);
+    
+    // Then load initial data and establish connections
     connectWebSocket();
     loadInitialData().catch(console.error);
     
+    // Finally check status (this will update if a robot is actually connected)
+    fetchAndUpdateStatus();
+    
     // Initialize real-time joints display
     if (realtimeJointsDisplay) {
-        realtimeJointsDisplay.value = '[Connecting...]';
+        realtimeJointsDisplay.value = '[No data]';
     }
     
-    // Start with idle refresh rate (will automatically switch to 10Hz during movement)
-    startIdleRefresh();
+    // Don't start automatic refresh until connected - it will be started in updateStatusUI when needed
+    
+    // Log streaming functions
+    function addLogEntry(message, type = 'info') {
+        if (!logStream) return;
+        
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement('div');
+        logEntry.className = `log-entry log-${type}`;
+        logEntry.innerHTML = `<span class="log-time">[${timestamp}]</span> ${message}`;
+        
+        // Add to top (newest first)
+        logStream.insertBefore(logEntry, logStream.firstChild);
+        
+        // Keep only last 50 entries (fewer since box is smaller)
+        const entries = logStream.querySelectorAll('.log-entry');
+        if (entries.length > 50) {
+            entries[entries.length - 1].remove();
+        }
+    }
+
+    // Initialize logging
+    addLogEntry('System initialized', 'info');
+    
+    // Add logging to existing functions
+    const originalApiRequest = apiRequest;
+    window.apiRequest = function(endpoint, method, data) {
+        addLogEntry(`API ${method} ${endpoint}`, 'info');
+        return originalApiRequest(endpoint, method, data).then(response => {
+            addLogEntry(`✓ ${method} ${endpoint} success`, 'info');
+            return response;
+        }).catch(error => {
+            addLogEntry(`✗ ${method} ${endpoint} failed: ${error.message}`, 'error');
+            throw error;
+        });
+    };
 }); 

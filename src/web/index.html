@@ -3,19 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>xArm Controller Dashboard</title>
+    <title>Robotic Control</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>xArm Controller Dashboard</h1>
-            <div id="status-container">
-                <div id="status-main">
-                    <div id="status-light" class="status-light offline"></div>
-                    <div id="status-text">Disconnected</div>
+            <div class="header-content">
+                <div class="title-status-container">
+                    <h1>Robotic Control</h1>
+                    <div id="status-container">
+                        <div id="status-main">
+                            <div id="status-light" class="status-light offline"></div>
+                            <div id="status-text">Disconnected</div>
+                        </div>
+                        <div id="connection-details"></div>
+                    </div>
                 </div>
-                <div id="connection-details"></div>
+                <div class="log-container">
+                    <div id="log-stream" class="log-stream"></div>
+                </div>
             </div>
         </header>
 
@@ -37,7 +44,7 @@
                     </div>
                     <div class="form-group-checkbox">
                         <input type="checkbox" id="simulation-mode">
-                        <label for="simulation-mode">Simulation Mode</label>
+                                                    <label for="simulation-mode">Software Simulation</label>
                     </div>
                     <button id="connect-btn" class="btn">Connect</button>
                     <button id="disconnect-btn" class="btn btn-danger" disabled>Disconnect</button>
@@ -50,7 +57,8 @@
                         <div>Gripper:</div><div id="gripper-state">N/A</div>
                         <div>Track:</div><div id="track-state">N/A</div>
                         <div>Mode:</div><div id="robot-mode">N/A</div>
-                        <div>Position:</div><div id="current-position">[...]</div>
+                        <div>X,Y,Z:</div><div id="current-xyz">[...]</div>
+                        <div>Rx,Ry,Rz:</div><div id="current-rpy">[...]</div>
                         <div>Last Error:</div><div id="last-error">None</div>
                     </div>
                 </div>
@@ -72,17 +80,30 @@
                                     <select id="predefined-position-select" class="position-dropdown"></select>
                                     <input type="text" id="realtime-joints" placeholder="Current Joint Angles" readonly class="joints-display">
                                 </div>
-                                <div class="move-controls-row">
-                                    <div class="speed-input-group">
-                                        <label for="move-speed">Speed</label>
-                                        <input type="number" id="move-speed" placeholder="20" min="1" max="100" value="20" class="speed-input">
-                                        <span class="speed-unit">°/s</span>
-                                    </div>
-                                    <div class="move-buttons-group">
-                                        <button id="move-predefined-btn" class="btn move-position-button">Move to Position</button>
-                                        <button id="enable-robot-btn" class="btn btn-success enable-button">Enable</button>
-                                    </div>
+                                
+                                <!-- Joint Movement Row -->
+                                <div class="joint-move-row">
+                                    <button id="move-predefined-btn" class="btn move-position-button">Joint Move</button>
+                                    <span class="inline-label">Speed:</span>
+                                    <input type="number" id="joint-speed" placeholder="20" min="1" max="200" value="20" class="inline-input">
+                                    <span class="inline-unit">°/s</span>
                                 </div>
+                                
+                                <!-- Linear Movement Row -->
+                                <div class="linear-move-row">
+                                    <button id="move-linear-btn" class="btn btn-primary move-linear-button">Linear Move</button>
+                                    <span class="inline-label">Speed:</span>
+                                    <input type="number" id="linear-speed" placeholder="100" min="1" max="1000" value="100" class="inline-input">
+                                    <span class="inline-unit">mm/s</span>
+                                    <span class="inline-label">Steps:</span>
+                                    <input type="number" id="linear-steps" placeholder="1" min="1" max="100" value="1" class="inline-input">
+                                </div>
+                                
+                                <!-- Enable Button Row -->
+                                                    <div class="enable-row">
+                        <button id="enable-robot-btn" class="btn btn-success enable-button">Enable</button>
+                        <button id="test-log-btn" class="btn btn-secondary" style="margin-left: 10px;">Test Logs</button>
+                    </div>
                             </div>
                         </div>
                         <div class="components-section">

@@ -32,6 +32,9 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Add WebSocket log handler (will be set up after ConnectionManager is ready)
+ws_handler = None
+
 # Global controller instance
 controller: Optional[XArmController] = None
 
@@ -58,6 +61,41 @@ class ConnectionManager:
                 logger.error(f"Error broadcasting message: {e}")
 
 manager = ConnectionManager()
+
+# Custom logging handler to broadcast logs to WebSocket clients
+class WebSocketLogHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(levelname)s: %(message)s')
+        self.setFormatter(formatter)
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            log_type = 'error' if record.levelno >= logging.ERROR else 'warning' if record.levelno >= logging.WARNING else 'info'
+            
+            # Create log message for WebSocket
+            log_data = {
+                'type': 'log',
+                'log_message': msg,
+                'log_type': log_type,
+                'timestamp': record.created
+            }
+            
+            # Store log data for WebSocket broadcast
+            # Use a different approach - store in a queue for periodic broadcast
+            if not hasattr(self, 'log_queue'):
+                self.log_queue = []
+            self.log_queue.append(log_data)
+            
+            # For debugging: print to console to verify handler is working
+            print(f"LOG HANDLER: {log_type.upper()} - {msg}")
+            
+        except Exception as e:
+            # For debugging: print to console if WebSocket broadcast fails
+            print(f"WebSocket log handler failed: {e}")
+            pass  # Don't let logging errors break the app
 
 # Pydantic models for request/response
 class ConnectionRequest(BaseModel):
@@ -106,15 +144,11 @@ class RelativeRequest(BaseModel):
     dpitch: float = Field(default=0, description="Delta pitch in degrees")
     dyaw: float = Field(default=0, description="Delta yaw in degrees")
     speed: Optional[float] = Field(default=None, description="Movement speed (validated by safety level)")
-    check_collision: bool = Field(default=True, description="Perform collision checking before movement.")
-    wait: bool = Field(default=True, description="Wait for movement to complete.")
 
 class LocationRequest(BaseModel):
     """Request model for moving to a named location."""
-    location_name: str = Field(description="Name of the location defined in location_config.yaml")
+    location_name: str = Field(description="Name of the location defined in position_config.yaml")
     speed: Optional[float] = Field(default=None, description="Movement speed (validated by safety level)")
-    check_collision: bool = Field(default=True, description="Perform collision checking before movement.")
-    wait: bool = Field(default=True, description="Wait for movement to complete.")
 
 class TrackRequest(BaseModel):
     """Request model for linear track movement."""
@@ -166,13 +200,26 @@ class JointTorqueMovementRequest(BaseModel):
     speed: Optional[float] = Field(default=None, description="Movement speed in deg/s")
     timeout: float = Field(default=30.0, description="Maximum time to wait in seconds")
 
+class PlateLinearRequest(BaseModel):
+    """Request model for linear movement from current position to target."""
+    target_location: str = Field(description="Name of the target location from position_config.yaml")
+    num_steps: int = Field(default=1, ge=1, le=100, description="Number of interpolation steps (1-100)")
+    speed: Optional[float] = Field(default=None, description="Movement speed (validated by safety level)")
+    wait_between_steps: float = Field(default=0.1, ge=0.0, le=5.0, description="Delay between steps in seconds (0-5)")
+
 # Application lifespan management
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting xArm API Server")
+    
+    # Start background tasks
+    log_task = asyncio.create_task(broadcast_logs())
+    
     yield
+    
     # Shutdown
+    log_task.cancel()
     global controller
     if controller:
         logger.info("Disconnecting from robot...")
@@ -195,6 +242,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Set up WebSocket logging
+ws_handler = WebSocketLogHandler()
+logger.addHandler(ws_handler)
+
+# Periodic task to broadcast queued logs
+async def broadcast_logs():
+    """Periodically broadcast queued logs to WebSocket clients"""
+    while True:
+        try:
+            if hasattr(ws_handler, 'log_queue') and ws_handler.log_queue:
+                # Broadcast all queued logs
+                logs_to_send = ws_handler.log_queue.copy()
+                ws_handler.log_queue.clear()
+                
+                for log_data in logs_to_send:
+                    await manager.broadcast(json.dumps(log_data))
+                    
+        except Exception as e:
+            print(f"Error broadcasting logs: {e}")
+        
+        await asyncio.sleep(0.5)  # Check every 500ms
+
+# Start log broadcasting task
+async def start_background_tasks():
+    """Start background tasks for the application"""
+    asyncio.create_task(broadcast_logs())
 
 # Helper functions
 def get_controller() -> XArmController:
@@ -393,6 +467,8 @@ async def get_status():
     """Get the current status of the robot and all components."""
     global controller
     
+    logger.info("Status requested via API")
+    
     # Handle disconnected state gracefully
     if not controller:
         return {
@@ -525,9 +601,7 @@ async def move_relative(request: RelativeRequest, background_tasks: BackgroundTa
         success = c.move_relative(
             dx=request.dx, dy=request.dy, dz=request.dz,
             droll=request.droll, dpitch=request.dpitch, dyaw=request.dyaw,
-            speed=request.speed,
-            check_collision=request.check_collision,
-            wait=request.wait
+            speed=request.speed
         )
         if not success:
             logger.error("Failed to move relative.")
@@ -544,9 +618,7 @@ async def move_to_location(request: LocationRequest, background_tasks: Backgroun
     async def move_task():
         success = c.move_to_named_location(
             location_name=request.location_name,
-            speed=request.speed,
-            check_collision=request.check_collision,
-            wait=request.wait
+            speed=request.speed
         )
         if not success:
             logger.error(f"Failed to move to named location: {request.location_name}")
@@ -581,13 +653,16 @@ async def stop_movement(background_tasks: BackgroundTasks):
     """Stop all robot motion immediately."""
     c = get_controller()
     
-    async def stop_task():
-        c.stop_motion()
-        logger.info("Stop command issued.")
+    # Execute stop immediately (not in background) for fastest response
+    c.stop_motion()
+    logger.info("Stop command issued immediately.")
+    
+    # Only use background task for status update
+    async def status_update_task():
         await broadcast_status_update()
-
-    background_tasks.add_task(stop_task)
-    return {"message": "Stop command accepted."}
+    
+    background_tasks.add_task(status_update_task)
+    return {"message": "Stop command executed immediately."}
 
 @app.post("/clear/errors")
 async def clear_errors(background_tasks: BackgroundTasks):
@@ -945,6 +1020,34 @@ async def move_joint_until_torque(request: JointTorqueMovementRequest, backgroun
 
     background_tasks.add_task(torque_movement_task)
     return {"message": "Torque-controlled joint movement started."}
+
+@app.post("/move/plate_linear")
+async def move_plate_linear(request: PlateLinearRequest, background_tasks: BackgroundTasks):
+    """Move linearly from current position to target with constant tool orientation."""
+    c = get_controller()
+    
+    async def plate_linear_task():
+        success = c.move_plate_linear(
+            target_location=request.target_location,
+            num_steps=request.num_steps,
+            speed=request.speed,
+            wait_between_steps=request.wait_between_steps
+        )
+        if not success:
+            logger.error(f"Failed to move linearly to {request.target_location}")
+        await broadcast_status_update()
+    
+    background_tasks.add_task(plate_linear_task)
+    return {"message": f"Linear movement to '{request.target_location}' command accepted."}
+
+# Test endpoint for log streaming
+@app.post("/test/log")
+async def test_log():
+    """Test endpoint to generate log messages for debugging."""
+    logger.info("Test info message from API")
+    logger.warning("Test warning message from API") 
+    logger.error("Test error message from API")
+    return {"message": "Test logs sent"}
 
 # WebSocket endpoint for real-time updates
 @app.websocket("/ws")

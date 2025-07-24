@@ -229,10 +229,10 @@ def get_default_config(config_type: str) -> Dict[str, Any]:
             'acc_limit': [1, 20000],
             'timeout': 10
         },
-        'location_config': {
-            'home': [300, 0, 300, 180, 0, 0],
-            'rest': [300, 0, 400, 180, 0, 0],
-            'safety': [300, 0, 500, 180, 0, 0]
+        'position_config': {
+            'positions': {
+                'ROBOT_HOME': [0.0, 0.0, 0.0, 0.0, 0.0],
+            }
         },
         'safety_config': {
             'workspace_limits': DEFAULT_SAFETY_BOUNDARIES,
@@ -475,7 +475,7 @@ DEFAULT_JOINT_LIMITS = {
 
 # Default performance thresholds
 DEFAULT_PERFORMANCE_THRESHOLDS = {
-    'max_cycle_time': 10.0,  # seconds
+    'max_cycle_time': 30.0,  # seconds - increased for realistic robot movements
     'max_accuracy_error': 1.0,  # mm
     'max_utilization': 85.0  # percentage
 }
