@@ -78,7 +78,7 @@ class TestXArmControllerInitialization:
         assert 'host' in controller.xarm_config
         assert 'GRIPPER_SPEED' in controller.gripper_config
         assert 'Speed' in controller.track_config
-        assert 'locations' in controller.location_config
+        assert 'positions' in controller.position_config
 
     def test_safety_level_configuration(self, mock_config_files):
         """Test safety level configuration."""

@@ -91,9 +91,9 @@ def mock_config_files(monkeypatch):
                 }
             }
         },
-        'bio_gripper_config': {'GRIPPER_SPEED': 300},
-        'location_config': {
-            'locations': {
+        'gripper_config': {'GRIPPER_SPEED': 300},
+        'position_config': {
+            'positions': {
         'home': {'x': 300, 'y': 0, 'z': 300, 'roll': 180, 'pitch': 0, 'yaw': 0},
         'pickup': {'x': 400, 'y': 100, 'z': 200, 'roll': 180, 'pitch': 0, 'yaw': 0}
     }
@@ -106,10 +106,10 @@ def mock_config_files(monkeypatch):
         filename = os.path.basename(file_path)
         if 'xarm_config' in filename:
             return mock_configs['xarm_config']
-        elif 'bio_gripper_config' in filename:
-            return mock_configs['bio_gripper_config']
-        elif 'location_config' in filename:
-            return mock_configs['location_config']
+        elif 'gripper_config' in filename:
+            return mock_configs['gripper_config']
+        elif 'position_config' in filename:
+            return mock_configs['position_config']
         elif 'linear_track_config' in filename:
             return mock_configs['linear_track_config']
         elif 'safety' in filename:

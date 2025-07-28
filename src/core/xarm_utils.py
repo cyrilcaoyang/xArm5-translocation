@@ -196,6 +196,8 @@ def get_default_config(config_type: str) -> Dict[str, Any]:
             'max_joint_acc': 1145,
         },
         'gripper_config': {
+            'GRIPPER_SPEED': 5000,
+            'GRIPPER_FORCE': 100,
             'bio_gripper': {
                 'enable': True,
                 'speed': 5000,
@@ -670,4 +672,4 @@ def check_operation_result(code: int, operation_name: str, arm_state: Optional[i
     if code is None or code == 0:
         return True
         
-        return check_return_code(code, operation_name, arm_state, error_code)
+    return check_return_code(code, operation_name, arm_state, error_code)

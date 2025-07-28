@@ -49,7 +49,7 @@ def test_read_root(client):
     """Test the root endpoint to ensure it returns the main page."""
     response = client.get("/")
     assert response.status_code == 200
-    assert "xArm Controller Dashboard" in response.text
+    assert "Robotic Control" in response.text
 
 
 def test_get_status_not_connected(client, monkeypatch):

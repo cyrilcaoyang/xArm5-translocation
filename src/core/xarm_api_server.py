@@ -17,7 +17,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -246,6 +247,29 @@ app.add_middleware(
 # Set up WebSocket logging
 ws_handler = WebSocketLogHandler()
 logger.addHandler(ws_handler)
+
+# Mount static files
+try:
+    web_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
+    if os.path.exists(web_dir):
+        app.mount("/static", StaticFiles(directory=web_dir), name="static")
+except Exception as e:
+    logger.warning(f"Could not mount static files: {e}")
+
+# Root endpoint to serve the main page
+@app.get("/")
+async def read_root():
+    """Serve the main HTML page."""
+    try:
+        web_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
+        html_path = os.path.join(web_dir, "index.html")
+        if os.path.exists(html_path):
+            return FileResponse(html_path)
+        else:
+            return {"message": "xArm Controller API", "docs": "/docs"}
+    except Exception as e:
+        logger.error(f"Error serving root page: {e}")
+        return {"message": "xArm Controller API", "docs": "/docs"}
 
 # Periodic task to broadcast queued logs
 async def broadcast_logs():
