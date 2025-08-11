@@ -1,12 +1,12 @@
 positions:
   robot_home: [0.0, 0.0, 0.0, 0.0, 0.0]
   robot_home_-90: [-90.0, 0.0, 0.0, 0.0, 0.0]
-  deck_low: [1.7, 51.0, -54.1, 3.1, 181.4] # reach down low
-  deck_high: [1.7, 25.3, -43.6, 18.3, 181.7]
+  deck_low: [0.0, 35.6, -40.8, 4.9, 179.8] # reach down low
+  deck_high: [-0.1, 6.6, -35.3, 28.5, 180.2]
   uplc_draw_home: [0, 0, 0, 0, 90]
-  uplc_draw_open_max: [0, 48.1, -55.8, 7.7, 90.1]
-  uplc_draw_open_min: [-34, 56.3, -77.4, 21.1, 56.3]
-  uplc_draw_open_close: [-37.6, 59.2, -84.3, 25.1, 52.8]
+  uplc_draw_open_max: [0, 36.7, -50.3, 13.6, 90.2]
+  uplc_draw_open_min: [-33.6, 46.0, -71.0, 25.1, 56.8]
+  uplc_draw_open_close: [-38.4, 50.3, -80.0, 29.8, 52.0]
   uplc_plate_home: [-55.3, 16.4, -29.4, 13, -55.1]
   uplc_plate_high: [-45.7, 16.4, -39.3, 22.9, -45.3]
   uplc_plate_low: [-45.7, 34, -43.4, 9.4, -45.6]

@@ -10,6 +10,9 @@ This script demonstrates the three main functionalities of the 6-axis force torq
 Usage:
     python demo_force_torque.py --real
     python demo_force_torque.py --simulation
+
+Note: # TODO: fix move until force threshold
+    Test two does not work: "[SDK][ERROR][2025-08-10 21:27:35][base.py:381] - - API -> vc_set_joint_velocity -> code=9, speeds=[0.0, 0.0, 0.0, 0.0, 0.08726646259971647, 0, 0], is_sync=True"
 """
 
 import os
@@ -89,7 +92,7 @@ def demo_linear_force_movement(controller):
     success = controller.move_until_force(
         direction=direction,
         force_threshold=force_threshold,
-        speed=50,  # Slow speed for safety
+        speed=20,  # Slow speed for safety
         timeout=30.0
     )
     
@@ -136,7 +139,7 @@ def demo_joint_torque_movement(controller):
         joint_id=joint_id,
         target_angle=target_angle,
         torque_threshold=2.0,  # 2 Nm threshold
-        speed=10,  # Slow speed for safety
+        speed=5,  # Slow speed for safety
         timeout=30.0
     )
     
@@ -210,10 +213,17 @@ def main():
     
     # Initialize controller
     try:
-        controller = XArmController(
-            simulation_mode=simulation_mode,
-            auto_enable=True
-        )
+        if simulation_mode:
+            controller = XArmController(
+                simulation_mode=True,
+                auto_enable=True
+            )
+        else:
+            controller = XArmController(
+                profile_name='real_hw',  # Use real_hw profile (192.168.1.237)
+                simulation_mode=False,
+                auto_enable=True
+            )
         
         if not controller.initialize():
             print("❌ Failed to initialize controller")

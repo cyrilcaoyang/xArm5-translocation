@@ -2128,7 +2128,12 @@ class XArmController:
             for i in range(samples):
                 ret = self.arm.get_ft_sensor_data()
                 if ret[0] == 0:
-                    readings.append(ret[1:])
+                    # Get the actual list of 6 values [fx, fy, fz, tx, ty, tz]
+                    raw_data = ret[1]  # ret[1] is the list, not ret[1:]
+                    if len(raw_data) == 6:
+                        readings.append(raw_data)  # Take the 6 values
+                    else:
+                        print(f"Warning: Expected 6 values, got {len(raw_data)}: {raw_data}")
                 time.sleep(delay)
 
             if len(readings) < samples // 2:
@@ -2137,7 +2142,7 @@ class XArmController:
 
             # Calculate average zero point
             self.force_torque_zero = [
-                sum(r[i] for r in readings) / len(readings)
+                sum(reading[i] for reading in readings) / len(readings)
                 for i in range(6)
             ]
             
@@ -2161,7 +2166,7 @@ class XArmController:
         try:
             ret = self.arm.get_ft_sensor_data()
             if ret[0] == 0:
-                raw_data = ret[1:]
+                raw_data = ret[1]  # ret[1] is the list of 6 values
                 
                 # Apply calibration if available
                 if self.force_torque_calibrated:
@@ -2343,9 +2348,17 @@ class XArmController:
         start_time = time.time()
         
         try:
+            # Set robot to Cartesian velocity control mode (mode 5)
+            code = self.arm.set_mode(5)
+            if not self.check_code(code, 'set_mode(5)'):
+                return False
+            
             # Start velocity control in the specified direction
-            velocity = [speed * x for x in direction]
-            self.arm.vc_set_cartesian_velocity(velocity)
+            # vc_set_cartesian_velocity expects [vx, vy, vz, vrx, vry, vrz]
+            velocity = [speed * x for x in direction] + [0, 0, 0]  # Add zero angular velocities
+            code = self.arm.vc_set_cartesian_velocity(velocity)
+            if not self.check_code(code, 'vc_set_cartesian_velocity'):
+                return False
 
             # Monitor force until threshold is reached
             while time.time() - start_time < timeout:
@@ -2355,8 +2368,9 @@ class XArmController:
 
                 # Check if force threshold is exceeded
                 if abs(data[0 if axis == 'x' else 1 if axis == 'y' else 2]) > force_threshold:
-                    # Stop motion
+                    # Stop motion and return to normal mode
                     self.arm.vc_set_cartesian_velocity([0, 0, 0, 0, 0, 0])
+                    self.arm.set_mode(0)  # Return to position control mode
                     print(f"Force threshold {force_threshold}N reached in {axis} direction")
                     return True
 
@@ -2364,12 +2378,14 @@ class XArmController:
 
             # Timeout reached
             self.arm.vc_set_cartesian_velocity([0, 0, 0, 0, 0, 0])
+            self.arm.set_mode(0)  # Return to position control mode
             print(f"Timeout reached without hitting force threshold")
             return False
 
         except Exception as e:
             print(f"Error during force-controlled movement: {e}")
             self.arm.vc_set_cartesian_velocity([0, 0, 0, 0, 0, 0])
+            self.arm.set_mode(0)  # Return to position control mode
             return False
 
     def move_joint_until_torque(self, joint_id, target_angle, torque_threshold=None, speed=None, timeout=30.0):
@@ -2415,10 +2431,17 @@ class XArmController:
             angle_diff = target_angle - current_joints[joint_id - 1]
             direction = 1 if angle_diff > 0 else -1
 
+            # Set robot to joint velocity control mode (mode 4)
+            code = self.arm.set_mode(4)
+            if not self.check_code(code, 'set_mode(4)'):
+                return False
+            
             # Start joint velocity control
             velocities = [0] * self.num_joints
             velocities[joint_id - 1] = direction * speed
-            self.arm.vc_set_joint_velocity(velocities)
+            code = self.arm.vc_set_joint_velocity(velocities)
+            if not self.check_code(code, 'vc_set_joint_velocity'):
+                return False
 
             # Monitor torque until threshold is reached
             while time.time() - start_time < timeout:
@@ -2430,8 +2453,9 @@ class XArmController:
                 # Map joint to torque axis (simplified mapping)
                 torque_axis = min(joint_id - 1, 2)  # Map to x, y, or z torque
                 if abs(data[3 + torque_axis]) > torque_threshold:
-                    # Stop motion
+                    # Stop motion and return to normal mode
                     self.arm.vc_set_joint_velocity([0] * self.num_joints)
+                    self.arm.set_mode(0)  # Return to position control mode
                     print(f"Torque threshold {torque_threshold}Nm reached for joint {joint_id}")
                     return True
 
@@ -2439,6 +2463,7 @@ class XArmController:
                 current_joints = self.get_current_joints()
                 if current_joints and abs(current_joints[joint_id - 1] - target_angle) < 1.0:
                     self.arm.vc_set_joint_velocity([0] * self.num_joints)
+                    self.arm.set_mode(0)  # Return to position control mode
                     print(f"Target angle {target_angle}° reached for joint {joint_id}")
                     return True
 
@@ -2446,12 +2471,14 @@ class XArmController:
 
             # Timeout reached
             self.arm.vc_set_joint_velocity([0] * self.num_joints)
+            self.arm.set_mode(0)  # Return to position control mode
             print(f"Timeout reached without hitting torque threshold")
             return False
 
         except Exception as e:
             print(f"Error during torque-controlled movement: {e}")
             self.arm.vc_set_joint_velocity([0] * self.num_joints)
+            self.arm.set_mode(0)  # Return to position control mode
             return False
 
     def get_force_torque_status(self):

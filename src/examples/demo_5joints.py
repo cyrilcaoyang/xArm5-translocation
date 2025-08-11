@@ -62,6 +62,7 @@ def test_gripper(controller, simulate=False):
         print("    [SIM] ✓ Closed")
         return True
     else:
+        
         print("    Opening gripper...")
         if not controller.open_gripper():
             print("    ✗ Failed to open")
@@ -75,6 +76,12 @@ def test_gripper(controller, simulate=False):
             print("    ✗ Failed to close")
             return False
         print("    ✓ Closed")
+
+        print("    Opening gripper...")
+        if not controller.open_gripper():
+            print("    ✗ Failed to open")
+            return False
+        print("    ✓ Opened")
         
         return True
 
@@ -163,13 +170,9 @@ def main():
         print(f"\n🔗 Connecting to robot...")
         
         try:
-            # Use absolute path and specifically load xarm5_config.yaml
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            config_path = os.path.join(script_dir, '..', 'settings') + '/'
-            
             controller = XArmController(
-                config_path=config_path,
-                model=5,  # Force xArm5 model (loads xarm5_config.yaml)
+                profile_name='real_hw',  # Use real_hw profile from config (192.168.1.237)
+                model=5,  # Force xArm5 model
                 gripper_type='bio',
                 enable_track=False,
                 auto_enable=False
